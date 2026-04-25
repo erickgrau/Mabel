@@ -176,6 +176,104 @@ modePtt.addEventListener("click", () => {
   saveSettings();
 });
 
+// Hotkey rebinding
+function formatHotkey(accelerator: string): string {
+  return accelerator.replace("CmdOrCtrl", "Cmd");
+}
+
+function eventToAccelerator(e: KeyboardEvent): string | null {
+  // Build a Tauri-compatible accelerator string from a KeyboardEvent.
+  // Returns null if the event is just a modifier or an unsupported key.
+  if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return null;
+
+  const parts: string[] = [];
+  if (e.metaKey || e.ctrlKey) parts.push("CmdOrCtrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+
+  const code = e.code;
+  let key: string | null = null;
+
+  if (code === "Space") key = "Space";
+  else if (code === "Enter") key = "Enter";
+  else if (code === "Tab") key = "Tab";
+  else if (code === "Escape") key = "Escape";
+  else if (code === "Backspace") key = "Backspace";
+  else if (code === "Delete") key = "Delete";
+  else if (code.startsWith("Arrow")) key = code.slice(5);
+  else if (/^F\d{1,2}$/.test(code)) key = code;
+  else if (code.startsWith("Key")) key = code.slice(3);
+  else if (code.startsWith("Digit")) key = code.slice(5);
+  else if (code === "Minus") key = "-";
+  else if (code === "Equal") key = "=";
+  else if (code === "BracketLeft") key = "[";
+  else if (code === "BracketRight") key = "]";
+  else if (code === "Backslash") key = "\\";
+  else if (code === "Semicolon") key = ";";
+  else if (code === "Quote") key = "'";
+  else if (code === "Comma") key = ",";
+  else if (code === "Period") key = ".";
+  else if (code === "Slash") key = "/";
+  else if (code === "Backquote") key = "`";
+  else return null;
+
+  // A bare key with no modifier is a bad global shortcut (it would steal
+  // every keystroke). Require at least one modifier unless it's a function key.
+  const isFunctionKey = /^F\d{1,2}$/.test(key);
+  if (parts.length === 0 && !isFunctionKey) return null;
+
+  parts.push(key);
+  return parts.join("+");
+}
+
+let capturingHotkey = false;
+hotkeyText.addEventListener("click", () => {
+  if (capturingHotkey) return;
+  capturingHotkey = true;
+  hotkeyText.classList.add("capturing");
+  const previousText = hotkeyText.textContent ?? "";
+  hotkeyText.textContent = "Press keys...";
+
+  const cleanup = () => {
+    capturingHotkey = false;
+    hotkeyText.classList.remove("capturing");
+    document.removeEventListener("keydown", onKey, true);
+  };
+
+  const onKey = async (e: KeyboardEvent) => {
+    if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      hotkeyText.textContent = previousText;
+      cleanup();
+      return;
+    }
+
+    const accelerator = eventToAccelerator(e);
+    if (!accelerator) {
+      // Wait for a usable combination.
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      await invoke("update_hotkey", { hotkey: accelerator });
+      currentSettings.hotkey = accelerator;
+      hotkeyText.textContent = formatHotkey(accelerator);
+    } catch (err) {
+      console.error("update_hotkey failed:", err);
+      hotkeyText.textContent = previousText;
+      alert(`Couldn't bind that combination: ${err}`);
+    } finally {
+      cleanup();
+    }
+  };
+
+  document.addEventListener("keydown", onKey, true);
+});
+
 // Listen for recording state changes
 listen<string>("recording-state", (event) => {
   const state = event.payload;

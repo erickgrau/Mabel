@@ -78,7 +78,7 @@ impl AudioRecorder {
         let sample_rate = default_config.sample_rate().0;
         let channels = default_config.channels();
 
-        println!("[Typr] Mic config: {}Hz, {} channels", sample_rate, channels);
+        println!("[Mabel] Mic config: {}Hz, {} channels", sample_rate, channels);
 
         self.source_sample_rate = sample_rate;
         self.source_channels = channels;
@@ -98,7 +98,7 @@ impl AudioRecorder {
                     buf.extend_from_slice(data);
                 },
                 |err| {
-                    eprintln!("[Typr] Audio stream error: {}", err);
+                    eprintln!("[Mabel] Audio stream error: {}", err);
                 },
                 None,
             )
@@ -106,20 +106,20 @@ impl AudioRecorder {
 
         stream.play().map_err(|e| e.to_string())?;
         self.stream = Some(SendStream(stream));
-        println!("[Typr] Audio recording started");
+        println!("[Mabel] Audio recording started");
         Ok(())
     }
 
     pub fn stop_and_save(&mut self, output_path: &PathBuf) -> Result<PathBuf, String> {
         self.stream = None; // Drop stops the stream
-        println!("[Typr] Audio recording stopped");
+        println!("[Mabel] Audio recording stopped");
 
         let samples = self.samples.lock().unwrap();
         if samples.is_empty() {
             return Err("No audio captured".to_string());
         }
 
-        println!("[Typr] Captured {} raw samples", samples.len());
+        println!("[Mabel] Captured {} raw samples", samples.len());
 
         // Convert to mono if multi-channel
         let mono: Vec<f32> = if self.source_channels > 1 {
@@ -133,7 +133,7 @@ impl AudioRecorder {
 
         // Downsample to 16kHz for whisper.cpp
         let resampled = resample(&mono, self.source_sample_rate, 16000);
-        println!("[Typr] Resampled to {} samples at 16kHz", resampled.len());
+        println!("[Mabel] Resampled to {} samples at 16kHz", resampled.len());
 
         let spec = WavSpec {
             channels: 1,
@@ -152,7 +152,7 @@ impl AudioRecorder {
         drop(samples);
         self.samples.lock().unwrap().clear();
 
-        println!("[Typr] WAV saved to {:?}", output_path);
+        println!("[Mabel] WAV saved to {:?}", output_path);
         Ok(output_path.clone())
     }
 }

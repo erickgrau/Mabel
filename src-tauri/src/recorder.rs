@@ -88,7 +88,8 @@ impl Recorder {
         // Transcribe
         let raw_text = match settings.engine.as_str() {
             "local" => {
-                let model_path = app_dir.join(transcribe_local::model_filename(&settings.whisper_model));
+                let model_file = transcribe_local::model_filename(&settings.whisper_model)?;
+                let model_path = app_dir.join(model_file);
                 transcribe_local::transcribe_local(app, &model_path, &temp_path).await?
             }
             "cloud" => {

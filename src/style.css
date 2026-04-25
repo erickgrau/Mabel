@@ -457,6 +457,31 @@ kbd {
   font-size: 12px;
   color: var(--text-secondary);
   letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+  outline: none;
+}
+
+kbd:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+kbd:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+kbd.capturing {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: kbd-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes kbd-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 /* ── Utility ────────────────────────────────────────── */
