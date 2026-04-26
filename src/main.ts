@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 
 interface Settings {
   microphone: string;
@@ -11,6 +12,25 @@ interface Settings {
   hotkey: string;
   streaming: boolean;
   groqKeyConfigured: boolean;
+  launchAtLogin: boolean;
+  showInDock: boolean;
+  dictationSounds: boolean;
+  pressEnterCommand: boolean;
+}
+
+interface VersionInfo {
+  version: string;
+  gitHash: string;
+  dirty: boolean;
+}
+
+interface StatsSummary {
+  today: number;
+  total: number;
+  streak: number;
+  total_words: number;
+  wpm: number;
+  last30: number[];
 }
 
 interface MicDevice {
@@ -87,12 +107,35 @@ document.querySelectorAll<HTMLElement>(".modal-nav-item").forEach((item) => {
   });
 });
 
-// Activate Pro buttons (placeholder)
-const proHandler = () => alert("Mabel Pro is coming soon. Local LLM cleanup, app-aware formatting, and more.");
+// Activate Pro buttons → open marketing site
+const PRO_URL = "https://www.chibiteklabs.com";
+const proHandler = (e?: Event) => {
+  e?.preventDefault();
+  openExternal(PRO_URL).catch((err) => console.error("open chibiteklabs.com failed:", err));
+};
 $("open-pro").addEventListener("click", proHandler);
 $("cta-pro").addEventListener("click", proHandler);
 document.querySelectorAll(".locked-card .btn-primary").forEach((b) => b.addEventListener("click", proHandler));
-$("open-help").addEventListener("click", () => alert("Hold the hotkey, speak, release. The transcription is pasted at your cursor."));
+document.getElementById("help-pro-link")?.addEventListener("click", proHandler);
+
+// Help button in sidebar footer → switch main view to help
+$("open-help").addEventListener("click", () => {
+  document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+  document.querySelectorAll<HTMLElement>(".view").forEach((s) => s.classList.remove("active"));
+  document.querySelector('.view[data-view="help"]')?.classList.add("active");
+});
+
+// Auto-hide first-time setup card once the user has completed a full dictation.
+// A successful Recording → Transcribing → Ready cycle proves mic + accessibility +
+// automation permissions all worked, so the prompts won't fire again.
+const SETUP_DONE_KEY = "mabel.setupComplete";
+const setupCard = document.getElementById("setup-card");
+function hideSetupCardIfDone() {
+  if (setupCard && localStorage.getItem(SETUP_DONE_KEY) === "1") {
+    setupCard.style.display = "none";
+  }
+}
+hideSetupCardIfDone();
 
 let currentSettings: Settings;
 
@@ -119,10 +162,72 @@ async function loadSettings() {
   keyStatus.classList.toggle("hidden", !currentSettings.groqKeyConfigured);
   setRecordingMode(currentSettings.recordingMode);
   streamingToggle.setAttribute("aria-checked", String(currentSettings.streaming));
+  setSwitch(autostartToggle, currentSettings.launchAtLogin);
+  setSwitch(dockToggle, currentSettings.showInDock);
+  setSwitch(soundsToggle, currentSettings.dictationSounds);
+  setSwitch(pressEnterToggle, currentSettings.pressEnterCommand);
 
   const formatted = formatHotkey(currentSettings.hotkey);
   hotkeyText.textContent = formatted;
   homeHotkey.textContent = formatted;
+}
+
+async function loadVersion() {
+  try {
+    const info = await invoke<VersionInfo>("get_version");
+    const footer = document.getElementById("footer-version");
+    if (footer) footer.textContent = `v${info.version} · ${info.gitHash} · © Chibitek Labs`;
+    const about = document.getElementById("about-version");
+    if (about) about.textContent = `Version ${info.version} · ${info.gitHash}`;
+  } catch (e) {
+    console.error("get_version failed:", e);
+  }
+}
+
+const insWpm = document.getElementById("ins-wpm");
+const insTotalWords = document.getElementById("ins-total-words");
+const insTotal = document.getElementById("ins-total");
+const insStreak = document.getElementById("ins-streak");
+const streakGrid = document.getElementById("streak-grid");
+const statToday = document.getElementById("stat-today");
+const statTotal = document.getElementById("stat-total");
+const statStreak = document.getElementById("stat-streak");
+
+function fmt(n: number): string {
+  return n.toLocaleString();
+}
+
+async function loadStats() {
+  try {
+    const s = await invoke<StatsSummary>("get_stats");
+    if (statToday) statToday.textContent = fmt(s.today);
+    if (statTotal) statTotal.textContent = fmt(s.total);
+    if (statStreak) statStreak.textContent = fmt(s.streak);
+    if (insWpm) insWpm.textContent = fmt(s.wpm);
+    if (insTotalWords) insTotalWords.textContent = fmt(s.total_words);
+    if (insTotal) insTotal.textContent = fmt(s.total);
+    if (insStreak) insStreak.textContent = fmt(s.streak);
+    if (streakGrid) {
+      const max = Math.max(1, ...s.last30);
+      streakGrid.innerHTML = "";
+      s.last30.forEach((count) => {
+        const cell = document.createElement("span");
+        cell.className = "streak-cell";
+        if (count === 0) cell.classList.add("l0");
+        else {
+          const pct = count / max;
+          if (pct > 0.75) cell.classList.add("l4");
+          else if (pct > 0.5) cell.classList.add("l3");
+          else if (pct > 0.25) cell.classList.add("l2");
+          else cell.classList.add("l1");
+        }
+        cell.title = `${count} dictation${count === 1 ? "" : "s"}`;
+        streakGrid.appendChild(cell);
+      });
+    }
+  } catch (e) {
+    console.error("get_stats failed:", e);
+  }
 }
 
 function setEngine(engine: string) {
@@ -214,6 +319,55 @@ streamingToggle.addEventListener("click", () => {
   saveSettings();
 });
 
+const autostartToggle = $<HTMLButtonElement>("autostart-toggle");
+const dockToggle = $<HTMLButtonElement>("dock-toggle");
+const soundsToggle = $<HTMLButtonElement>("sounds-toggle");
+const pressEnterToggle = $<HTMLButtonElement>("press-enter-toggle");
+
+function setSwitch(btn: HTMLButtonElement, on: boolean) {
+  btn.setAttribute("aria-checked", String(on));
+}
+
+autostartToggle.addEventListener("click", async () => {
+  const next = autostartToggle.getAttribute("aria-checked") !== "true";
+  setSwitch(autostartToggle, next);
+  currentSettings.launchAtLogin = next;
+  try {
+    await invoke("set_launch_at_login", { enabled: next });
+    await saveSettings();
+  } catch (e) {
+    console.error("set_launch_at_login failed:", e);
+    setSwitch(autostartToggle, !next);
+    currentSettings.launchAtLogin = !next;
+  }
+});
+
+dockToggle.addEventListener("click", async () => {
+  const next = dockToggle.getAttribute("aria-checked") !== "true";
+  setSwitch(dockToggle, next);
+  currentSettings.showInDock = next;
+  try {
+    await invoke("set_show_in_dock", { show: next });
+    await saveSettings();
+  } catch (e) {
+    console.error("set_show_in_dock failed:", e);
+  }
+});
+
+soundsToggle.addEventListener("click", () => {
+  const next = soundsToggle.getAttribute("aria-checked") !== "true";
+  setSwitch(soundsToggle, next);
+  currentSettings.dictationSounds = next;
+  saveSettings();
+});
+
+pressEnterToggle.addEventListener("click", () => {
+  const next = pressEnterToggle.getAttribute("aria-checked") !== "true";
+  setSwitch(pressEnterToggle, next);
+  currentSettings.pressEnterCommand = next;
+  saveSettings();
+});
+
 function formatHotkey(accelerator: string): string {
   return accelerator.replace("CmdOrCtrl", "Cmd");
 }
@@ -301,6 +455,7 @@ hotkeyText.addEventListener("click", () => {
   document.addEventListener("keydown", onKey, true);
 });
 
+let lastRecordingState = "Ready";
 listen<string>("recording-state", (event) => {
   const state = event.payload;
   statusDot.className = "status-dot";
@@ -312,11 +467,24 @@ listen<string>("recording-state", (event) => {
     statusText.textContent = "Transcribing";
   } else {
     statusText.textContent = "Ready";
+    // Transcribing → Ready means a paste just succeeded, so all required
+    // permissions are granted. Stash the flag and hide the setup card.
+    if (lastRecordingState === "Transcribing" && localStorage.getItem(SETUP_DONE_KEY) !== "1") {
+      localStorage.setItem(SETUP_DONE_KEY, "1");
+      hideSetupCardIfDone();
+    }
   }
+  lastRecordingState = state;
 });
 
 listen<DownloadProgress>("download-progress", (event) => {
   progressFill.style.width = `${event.payload.percent}%`;
 });
 
+listen("stats-updated", () => {
+  loadStats();
+});
+
 loadSettings();
+loadVersion();
+loadStats();

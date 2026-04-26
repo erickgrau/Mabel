@@ -30,6 +30,10 @@
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
             Home
           </a>
+          <a class="nav-item" data-view="insights">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 13h12M4 13V8M7.5 13V5M11 13V9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            Insights
+          </a>
           <a class="nav-item locked" data-view="dictionary">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 2.5h7l3 3v8H3v-11z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10 2.5v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
             Dictionary
@@ -97,6 +101,42 @@
             </div>
           </div>
 
+          <div class="card setup-card" id="setup-card">
+            <div class="setup-header">
+              <h2 class="setup-title">First-time setup</h2>
+              <p class="setup-sub">macOS will ask for three permissions the first time you dictate. All three are required for Mabel to record and paste.</p>
+            </div>
+            <div class="setup-line">
+              <span class="step-num">1</span>
+              <div>
+                <div class="row-label">Microphone</div>
+                <div class="row-hint">Asked the first time you press the hotkey. Click <b>OK</b> to let Mabel record audio.</div>
+              </div>
+            </div>
+            <div class="setup-line">
+              <span class="step-num">2</span>
+              <div>
+                <div class="row-label">Accessibility</div>
+                <div class="row-hint">Asked when Mabel tries to paste your first transcription. Click <b>Open System Settings</b>, then toggle <b>Mabel</b> on under Privacy &amp; Security &rarr; Accessibility.</div>
+              </div>
+            </div>
+            <div class="setup-line">
+              <span class="step-num">3</span>
+              <div>
+                <div class="row-label">Automation (System Events)</div>
+                <div class="row-hint">Asked once so Mabel can paste at your cursor. Click <b>Allow</b>.</div>
+              </div>
+            </div>
+            <div class="setup-line">
+              <span class="step-num key">⌘</span>
+              <div>
+                <div class="row-label">Keychain</div>
+                <div class="row-hint">If you switch to Groq cloud later, macOS will ask you to unlock the Keychain so your API key can be stored securely. Click <b>Always Allow</b>.</div>
+              </div>
+            </div>
+            <div class="setup-foot">Granted permissions stick. You only see these prompts once per Mac.</div>
+          </div>
+
           <div class="stats-row">
             <div class="card stat">
               <div class="stat-label">Today</div>
@@ -144,6 +184,127 @@
           <header class="view-header"><h1 class="view-title">Transforms</h1><p class="view-sub">Reshape text on the fly with on-device LLM cleanup.</p></header>
           <div class="card locked-card"><div class="locked-eyebrow">Pro feature</div><p>Activate Pro for grammar, punctuation, and filler-word cleanup that runs locally.</p><button type="button" class="btn-primary">Activate Pro</button></div>
         </section>
+        <section class="view" data-view="insights">
+          <header class="view-header">
+            <h1 class="view-title">Insights</h1>
+            <p class="view-sub">Local-only counts of how you use Mabel. Never the words themselves.</p>
+          </header>
+
+          <div class="insights-grid">
+            <div class="card stat-big">
+              <div class="stat-label">Words per minute</div>
+              <div class="stat-value" id="ins-wpm">0</div>
+              <div class="stat-unit">average</div>
+            </div>
+            <div class="card stat-big">
+              <div class="stat-label">Total words dictated</div>
+              <div class="stat-value" id="ins-total-words">0</div>
+              <div class="stat-unit">all time</div>
+            </div>
+            <div class="card stat-big">
+              <div class="stat-label">Total dictations</div>
+              <div class="stat-value" id="ins-total">0</div>
+              <div class="stat-unit">all time</div>
+            </div>
+          </div>
+
+          <div class="card streak-card">
+            <div class="streak-head">
+              <h2 class="streak-title"><span id="ins-streak">0</span> day streak</h2>
+              <span class="streak-sub">Last 30 days</span>
+            </div>
+            <div class="streak-grid" id="streak-grid"></div>
+            <div class="streak-legend">
+              <span class="streak-legend-text">More</span>
+              <span class="streak-cell l4"></span>
+              <span class="streak-cell l3"></span>
+              <span class="streak-cell l2"></span>
+              <span class="streak-cell l1"></span>
+              <span class="streak-cell l0"></span>
+              <span class="streak-legend-text">Less</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" data-view="help">
+          <header class="view-header">
+            <h1 class="view-title">Help</h1>
+            <p class="view-sub">Everything you can do with Mabel, in one page.</p>
+          </header>
+
+          <div class="card help-card">
+            <h2 class="help-h">What Mabel does</h2>
+            <p>Mabel turns speech into text on your Mac, then pastes the result wherever your cursor is. Audio is recorded, transcribed, and deleted. Nothing is uploaded unless you explicitly choose the Groq cloud engine and supply your own API key.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Quick start</h2>
+            <ol class="help-list">
+              <li><b>Pick a microphone</b> in Settings &rarr; General.</li>
+              <li><b>Pick an engine</b> in Settings &rarr; Engine. Local works offline; Groq cloud is faster but sends audio to Groq.</li>
+              <li>If you chose Local, click <b>Download</b> to fetch the Whisper model (one-time, 466&nbsp;MB or 1.5&nbsp;GB).</li>
+              <li>Place your cursor in any text field, press the hotkey, speak, release (or press again).</li>
+              <li>Mabel pastes the transcription at your cursor.</li>
+            </ol>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">The hotkey</h2>
+            <p>Default is <kbd>Cmd+Shift+D</kbd>. Change it in Settings &rarr; General by clicking the hotkey field and pressing your new combination. Press <kbd>Esc</kbd> to cancel.</p>
+            <p class="help-note"><b>Toggle</b> mode: press once to start, press again to stop and paste.<br/><b>Push to talk</b> mode: hold the hotkey while you speak, release to stop and paste.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Live dictation</h2>
+            <p>When enabled (Settings &rarr; Engine), Mabel transcribes and pastes in chunks while you speak instead of waiting until you stop. Useful for long dictations. Disable it for short snippets where you want a single clean paste.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Local vs Groq cloud</h2>
+            <p><b>Local</b> uses Whisper running on your Mac. Audio never leaves the device. Slower than cloud, especially on the Medium model, but completely private.</p>
+            <p><b>Groq cloud</b> uses Groq's hosted Whisper. Faster and more accurate on long audio, but each clip is sent to Groq's servers. Requires a free key from <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>. Your key is stored in the macOS Keychain, never in a config file.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">The overlay</h2>
+            <p>A small floating panel appears at the top of your screen while you're recording, showing a live waveform. It floats over fullscreen apps and never steals focus, so the app you're typing into stays active. Drag it if you want to move it.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Permissions</h2>
+            <ul class="help-list">
+              <li><b>Microphone</b> &mdash; required to record. Grant when first prompted, or in System Settings &rarr; Privacy &amp; Security &rarr; Microphone.</li>
+              <li><b>Accessibility</b> &mdash; required to paste at the cursor. Toggle Mabel on under System Settings &rarr; Privacy &amp; Security &rarr; Accessibility.</li>
+              <li><b>Automation (System Events)</b> &mdash; required for the paste mechanism. Click Allow when prompted.</li>
+              <li><b>Keychain</b> &mdash; only if you save a Groq API key. Click Always Allow to avoid future prompts.</li>
+            </ul>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Privacy</h2>
+            <ul class="help-list">
+              <li>Audio files are written to a temp directory, transcribed, then deleted.</li>
+              <li>Transcripts are never logged to disk.</li>
+              <li>No telemetry, no analytics, no phoning home.</li>
+              <li>Stats on the Home view (today, all-time, streak) are counts only, never content.</li>
+              <li>API keys live in the macOS Keychain.</li>
+            </ul>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Troubleshooting</h2>
+            <p><b>Nothing happens when I press the hotkey.</b> Check that the hotkey isn't already bound by another app. Try a different combination in Settings &rarr; General.</p>
+            <p><b>Recording starts but nothing pastes.</b> Open System Settings &rarr; Privacy &amp; Security &rarr; Accessibility and confirm Mabel is toggled on. If you denied the Automation prompt, reset it with <code>tccutil reset AppleEvents com.mabel.app</code> in Terminal and try again.</p>
+            <p><b>Transcription is slow.</b> Switch to the Small model in Settings &rarr; Engine, or try Groq cloud.</p>
+            <p><b>Wrong microphone.</b> Pick the one you want in Settings &rarr; General.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Pro features (coming soon)</h2>
+            <p>Custom dictionary, snippets, style rules, on-device LLM cleanup, app-aware formatting, and iCloud settings sync. All still on-device. <a href="#" id="help-pro-link">Learn more at chibiteklabs.com</a>.</p>
+          </div>
+        </section>
+
         <section class="view view-locked" data-view="scratchpad">
           <header class="view-header"><h1 class="view-title">Scratchpad</h1><p class="view-sub">A quiet place to dump and edit transcripts.</p></header>
           <div class="card locked-card"><div class="locked-eyebrow">Pro feature</div><p>Activate Pro to keep a local-only scratchpad of your dictations.</p><button type="button" class="btn-primary">Activate Pro</button></div>
@@ -163,6 +324,10 @@
           <a class="modal-nav-item" data-pane="engine">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h2.5l1.5-3 2 6 1.5-3H14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Engine
+          </a>
+          <a class="modal-nav-item" data-pane="system">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 13h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            System
           </a>
           <a class="modal-nav-item" data-pane="privacy">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2l5 2v4c0 3-2.5 5-5 6-2.5-1-5-3-5-6V4l5-2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
@@ -186,7 +351,7 @@
           </a>
 
           <div class="modal-footer">
-            <span class="version">Mabel v0.1.0 &middot; &copy; Chibitek Labs</span>
+            <span class="version" id="footer-version">Mabel &middot; &copy; Chibitek Labs</span>
             <button type="button" class="modal-close" id="close-settings" aria-label="Close">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             </button>
@@ -275,6 +440,48 @@
             </div>
           </div>
 
+          <div class="modal-pane" data-pane="system">
+            <h2 class="pane-title">System</h2>
+            <div class="card pane-card">
+              <div class="row">
+                <div class="row-text">
+                  <div class="row-label">Launch at login</div>
+                  <div class="row-hint">Start Mabel automatically when you log into your Mac.</div>
+                </div>
+                <button type="button" id="autostart-toggle" class="switch" role="switch" aria-checked="false" aria-label="Launch at login">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+              <div class="row">
+                <div class="row-text">
+                  <div class="row-label">Show app in dock</div>
+                  <div class="row-hint">Off keeps Mabel in the background only. Hotkey still works.</div>
+                </div>
+                <button type="button" id="dock-toggle" class="switch" role="switch" aria-checked="true" aria-label="Show in dock">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+              <div class="row">
+                <div class="row-text">
+                  <div class="row-label">Dictation sounds</div>
+                  <div class="row-hint">Soft start and stop sound effects.</div>
+                </div>
+                <button type="button" id="sounds-toggle" class="switch" role="switch" aria-checked="true" aria-label="Dictation sounds">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+              <div class="row">
+                <div class="row-text">
+                  <div class="row-label">Press Enter command</div>
+                  <div class="row-hint">When on, ending a dictation with &ldquo;press enter&rdquo;, &ldquo;press return&rdquo;, or &ldquo;new line&rdquo; submits after pasting.</div>
+                </div>
+                <button type="button" id="press-enter-toggle" class="switch" role="switch" aria-checked="false" aria-label="Press Enter command">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="modal-pane" data-pane="privacy">
             <h2 class="pane-title">Privacy</h2>
             <div class="card pane-card privacy-card">
@@ -290,7 +497,7 @@
             <h2 class="pane-title">About</h2>
             <div class="card pane-card about-card">
               <div class="about-name">Mabel</div>
-              <div class="about-version">Version 0.1.0</div>
+              <div class="about-version" id="about-version">Version</div>
               <p class="about-body">A privacy-first dictation app for macOS. Built by Chibitek Labs. Named after a long-haired Persian who would never share your transcripts with anyone.</p>
               <div class="about-copy">Copyright &copy; 2026 Chibitek Labs. All rights reserved.</div>
             </div>

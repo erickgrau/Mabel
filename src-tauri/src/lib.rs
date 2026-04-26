@@ -7,8 +7,14 @@ pub mod paste;
 pub mod recorder;
 pub mod downloader;
 pub mod secrets;
+pub mod stats;
 pub mod streaming;
+pub mod system_ui;
 pub mod overlay_macos;
+
+pub const MABEL_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const MABEL_GIT_HASH: &str = env!("MABEL_GIT_HASH");
+pub const MABEL_GIT_DIRTY: &str = env!("MABEL_GIT_DIRTY");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

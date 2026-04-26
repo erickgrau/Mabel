@@ -6,6 +6,8 @@
     "core:default",
     "core:window:allow-start-dragging",
     "global-shortcut:default",
+    "shell:allow-open",
+    "autostart:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [

@@ -21,9 +21,18 @@ pub struct Settings {
     /// keychain, so the UI can show "Saved" status without prompting.
     #[serde(rename = "groqKeyConfigured", default)]
     pub groq_key_configured: bool,
+    #[serde(rename = "launchAtLogin", default)]
+    pub launch_at_login: bool,
+    #[serde(rename = "showInDock", default = "default_true")]
+    pub show_in_dock: bool,
+    #[serde(rename = "dictationSounds", default = "default_true")]
+    pub dictation_sounds: bool,
+    #[serde(rename = "pressEnterCommand", default)]
+    pub press_enter_command: bool,
 }
 
 fn default_streaming() -> bool { true }
+fn default_true() -> bool { true }
 
 /// What we actually serialize to disk. Excludes the Groq API key, which lives
 /// in the OS keychain. Keeps the same JSON shape the UI expects, minus the key.
@@ -40,6 +49,14 @@ struct DiskSettings {
     streaming: bool,
     #[serde(rename = "groqKeyConfigured", default)]
     groq_key_configured: bool,
+    #[serde(rename = "launchAtLogin", default)]
+    launch_at_login: bool,
+    #[serde(rename = "showInDock", default = "default_true")]
+    show_in_dock: bool,
+    #[serde(rename = "dictationSounds", default = "default_true")]
+    dictation_sounds: bool,
+    #[serde(rename = "pressEnterCommand", default)]
+    press_enter_command: bool,
 }
 
 impl From<&Settings> for DiskSettings {
@@ -52,6 +69,10 @@ impl From<&Settings> for DiskSettings {
             hotkey: s.hotkey.clone(),
             streaming: s.streaming,
             groq_key_configured: s.groq_key_configured,
+            launch_at_login: s.launch_at_login,
+            show_in_dock: s.show_in_dock,
+            dictation_sounds: s.dictation_sounds,
+            press_enter_command: s.press_enter_command,
         }
     }
 }
@@ -67,6 +88,10 @@ impl Default for Settings {
             hotkey: "CmdOrCtrl+Shift+Space".to_string(),
             streaming: true,
             groq_key_configured: false,
+            launch_at_login: false,
+            show_in_dock: true,
+            dictation_sounds: true,
+            press_enter_command: false,
         }
     }
 }
@@ -101,6 +126,10 @@ impl Settings {
                         hotkey: d.hotkey,
                         streaming: d.streaming,
                         groq_key_configured: d.groq_key_configured,
+                        launch_at_login: d.launch_at_login,
+                        show_in_dock: d.show_in_dock,
+                        dictation_sounds: d.dictation_sounds,
+                        press_enter_command: d.press_enter_command,
                     })
                     .unwrap_or_default();
 

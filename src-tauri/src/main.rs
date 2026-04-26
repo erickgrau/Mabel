@@ -1,20 +1,61 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_autostart::{ManagerExt as AutostartManagerExt, MacosLauncher};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutEvent, ShortcutState};
 
 use mabel_lib::audio;
 use mabel_lib::downloader;
 use mabel_lib::recorder::{Recorder, RecordingState};
 use mabel_lib::settings::Settings;
+use mabel_lib::stats::{StatsStore, StatsSummary};
+use mabel_lib::system_ui;
 use mabel_lib::transcribe_local;
 
 struct AppState {
     recorder: Recorder,
     settings: Mutex<Settings>,
     app_dir: PathBuf,
+    stats: Arc<StatsStore>,
+}
+
+#[derive(serde::Serialize)]
+struct VersionInfo {
+    version: &'static str,
+    #[serde(rename = "gitHash")]
+    git_hash: &'static str,
+    dirty: bool,
+}
+
+#[tauri::command]
+fn get_version() -> VersionInfo {
+    VersionInfo {
+        version: mabel_lib::MABEL_VERSION,
+        git_hash: mabel_lib::MABEL_GIT_HASH,
+        dirty: mabel_lib::MABEL_GIT_DIRTY == "1",
+    }
+}
+
+#[tauri::command]
+fn get_stats(state: State<AppState>) -> StatsSummary {
+    state.stats.summary()
+}
+
+#[tauri::command]
+fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let mgr = app.autolaunch();
+    if enabled {
+        mgr.enable().map_err(|e| e.to_string())
+    } else {
+        mgr.disable().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn set_show_in_dock(app: tauri::AppHandle, show: bool) {
+    system_ui::set_dock_visibility(&app, show);
 }
 
 fn get_app_dir() -> PathBuf {
@@ -214,17 +255,23 @@ fn main() {
     let settings = Settings::load(&app_dir);
     let initial_hotkey = settings.hotkey.clone();
 
+    let stats = Arc::new(StatsStore::load(&app_dir));
+    let recorder = Recorder::new(stats.clone());
+    let initial_show_in_dock = settings.show_in_dock;
+
     tauri::Builder::default()
         // Single-instance plugin temporarily disabled while we debug a startup
         // crash. Re-enable once the cause is isolated. Until then, the user
         // should avoid double-launching Mabel manually.
         .plugin(tauri_nspanel::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
-            recorder: Recorder::new(),
+            recorder,
             settings: Mutex::new(settings),
             app_dir,
+            stats,
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -235,6 +282,10 @@ fn main() {
             download_model,
             toggle_recording,
             update_hotkey,
+            get_version,
+            get_stats,
+            set_launch_at_login,
+            set_show_in_dock,
         ])
         .setup(move |app| {
             // Create the overlay window (small mic icon, top-right, always on top)
@@ -287,6 +338,9 @@ fn main() {
             }
 
             let handle = app.handle().clone();
+
+            // Apply persisted dock visibility preference.
+            system_ui::set_dock_visibility(&handle, initial_show_in_dock);
 
             println!("[Mabel] Registering global shortcut: {}", initial_hotkey);
 

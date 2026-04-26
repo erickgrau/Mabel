@@ -1,12 +1,16 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::AudioRecorder;
 use crate::cleanup::cleanup_text;
-use crate::paste::paste_text;
+use crate::paste::{extract_press_enter_command, paste_text, press_return};
 use crate::settings::Settings;
+use crate::stats::StatsStore;
 use crate::streaming::{self, StreamingHandle};
+use crate::system_ui;
 use crate::transcribe_groq;
 use crate::transcribe_local;
 
@@ -33,14 +37,20 @@ pub struct Recorder {
     state: Arc<Mutex<RecordingState>>,
     audio_recorder: Arc<Mutex<AudioRecorder>>,
     streaming_handle: Arc<Mutex<Option<StreamingHandle>>>,
+    streaming_words: Arc<AtomicU64>,
+    started_at: Arc<Mutex<Option<Instant>>>,
+    stats: Arc<StatsStore>,
 }
 
 impl Recorder {
-    pub fn new() -> Self {
+    pub fn new(stats: Arc<StatsStore>) -> Self {
         Self {
             state: Arc::new(Mutex::new(RecordingState::Ready)),
             audio_recorder: Arc::new(Mutex::new(AudioRecorder::new())),
             streaming_handle: Arc::new(Mutex::new(None)),
+            streaming_words: Arc::new(AtomicU64::new(0)),
+            started_at: Arc::new(Mutex::new(None)),
+            stats,
         }
     }
 
@@ -65,14 +75,16 @@ impl Recorder {
             recorder.start(app, mic_name)?;
         }
 
-        // If streaming is enabled, fire up the VAD worker. It pulls from the
-        // shared AudioRecorder buffer and ships chunks to whisper as they arrive.
+        self.streaming_words.store(0, Ordering::Relaxed);
+        *self.started_at.lock().unwrap() = Some(Instant::now());
+
         if settings.streaming {
             let handle = streaming::spawn_vad_worker(
                 app.clone(),
                 self.audio_recorder.clone(),
                 settings.clone(),
                 app_dir.clone(),
+                self.streaming_words.clone(),
             );
             *self.streaming_handle.lock().unwrap() = Some(handle);
         }
@@ -80,6 +92,10 @@ impl Recorder {
         *state = RecordingState::Recording;
         let _ = app.emit("recording-state", RecordingState::Recording);
         update_overlay(app, &RecordingState::Recording);
+
+        if settings.dictation_sounds {
+            system_ui::play_sound("Tink");
+        }
 
         Ok(())
     }
@@ -90,7 +106,6 @@ impl Recorder {
         settings: &Settings,
         app_dir: &PathBuf,
     ) -> Result<String, String> {
-        // Stop recording
         {
             let mut state = self.state.lock().unwrap();
             if *state != RecordingState::Recording {
@@ -101,8 +116,14 @@ impl Recorder {
             update_overlay(app, &RecordingState::Transcribing);
         }
 
-        // If streaming was running, shut down the VAD worker, stop the cpal
-        // stream, and flush any tail audio as one last chunk.
+        let elapsed_seconds = self
+            .started_at
+            .lock()
+            .unwrap()
+            .take()
+            .map(|t| t.elapsed().as_secs_f64())
+            .unwrap_or(0.0);
+
         let streaming_handle = self.streaming_handle.lock().unwrap().take();
         if let Some(handle) = streaming_handle {
             handle.stop().await;
@@ -110,16 +131,30 @@ impl Recorder {
                 let mut recorder = self.audio_recorder.lock().unwrap();
                 recorder.stop_stream_only();
             }
-            streaming::flush_final_chunk(app, self.audio_recorder.clone(), settings, app_dir).await;
+            streaming::flush_final_chunk(
+                app,
+                self.audio_recorder.clone(),
+                settings,
+                app_dir,
+                self.streaming_words.clone(),
+            )
+            .await;
+
+            let words = self.streaming_words.load(Ordering::Relaxed);
+            if words > 0 {
+                self.stats.record(words, elapsed_seconds);
+            }
 
             *self.state.lock().unwrap() = RecordingState::Ready;
             let _ = app.emit("recording-state", RecordingState::Ready);
+            let _ = app.emit("stats-updated", ());
             update_overlay(app, &RecordingState::Ready);
+            if settings.dictation_sounds {
+                system_ui::play_sound("Pop");
+            }
             return Ok(String::new());
         }
 
-        // Non-streaming: existing one-shot path. Save WAV, transcribe whole thing,
-        // paste once.
         let temp_path = app_dir.join("temp_recording.wav");
         {
             let mut recorder = self.audio_recorder.lock().unwrap();
@@ -139,24 +174,38 @@ impl Recorder {
             _ => return Err(format!("Unknown engine: {}", settings.engine)),
         };
 
-        // Keep a copy for debugging, then drop the temp.
         let debug_path = app_dir.join("last_recording.wav");
         let _ = std::fs::copy(&temp_path, &debug_path);
         let _ = std::fs::remove_file(&temp_path);
 
         let cleaned = cleanup_text(&raw_text);
-        if !cleaned.is_empty() {
-            paste_text(&cleaned)?;
+        let (to_paste, press_enter) =
+            extract_press_enter_command(&cleaned, settings.press_enter_command);
+        if !to_paste.is_empty() {
+            paste_text(&to_paste)?;
+            let words = to_paste.split_whitespace().count() as u64;
+            if words > 0 {
+                self.stats.record(words, elapsed_seconds);
+            }
+        }
+        if press_enter {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            let _ = press_return();
         }
 
         {
             let mut state = self.state.lock().unwrap();
             *state = RecordingState::Ready;
             let _ = app.emit("recording-state", RecordingState::Ready);
+            let _ = app.emit("stats-updated", ());
             update_overlay(app, &RecordingState::Ready);
         }
 
-        Ok(cleaned)
+        if settings.dictation_sounds {
+            system_ui::play_sound("Pop");
+        }
+
+        Ok(to_paste)
     }
 }
 
@@ -166,7 +215,8 @@ mod tests {
 
     #[test]
     fn test_initial_state_is_ready() {
-        let recorder = Recorder::new();
+        let stats = Arc::new(StatsStore::load(&PathBuf::from("/tmp/mabel-test-recorder")));
+        let recorder = Recorder::new(stats);
         assert_eq!(recorder.get_state(), RecordingState::Ready);
     }
 }
