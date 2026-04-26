@@ -52,7 +52,7 @@ impl Recorder {
         }
 
         let mut recorder = self.audio_recorder.lock().unwrap();
-        recorder.start(mic_name)?;
+        recorder.start(app, mic_name)?;
 
         *state = RecordingState::Recording;
         let _ = app.emit("recording-state", RecordingState::Recording);
@@ -88,7 +88,8 @@ impl Recorder {
         // Transcribe
         let raw_text = match settings.engine.as_str() {
             "local" => {
-                let model_path = app_dir.join(transcribe_local::model_filename(&settings.whisper_model));
+                let model_file = transcribe_local::model_filename(&settings.whisper_model)?;
+                let model_path = app_dir.join(model_file);
                 transcribe_local::transcribe_local(app, &model_path, &temp_path).await?
             }
             "cloud" => {
@@ -97,7 +98,10 @@ impl Recorder {
             _ => return Err(format!("Unknown engine: {}", settings.engine)),
         };
 
-        // Cleanup temp file
+        // DEBUG: keep a copy of the WAV so it can be played back to verify audio quality.
+        let debug_path = app_dir.join("last_recording.wav");
+        let _ = std::fs::copy(&temp_path, &debug_path);
+        println!("[Mabel DEBUG] Kept WAV copy at {:?}", debug_path);
         let _ = std::fs::remove_file(&temp_path);
 
         // Clean up text

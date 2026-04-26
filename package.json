@@ -1,7 +1,10 @@
 {
-  "name": "typr",
+  "name": "mabel",
   "private": true,
   "version": "0.1.0",
+  "description": "Privacy-first macOS dictation. Audio never leaves your Mac.",
+  "author": "Chibitek Labs",
+  "license": "Copyright (c) 2026 Chibitek Labs. All rights reserved.",
   "type": "module",
   "scripts": {
     "dev": "vite",

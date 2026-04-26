@@ -1,7 +1,10 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MicDevice {
@@ -42,6 +45,8 @@ pub struct AudioRecorder {
     stream: Option<SendStream>,
     source_sample_rate: u32,
     source_channels: u16,
+    level: Arc<AtomicU32>,
+    running: Arc<AtomicBool>,
 }
 
 impl AudioRecorder {
@@ -51,10 +56,12 @@ impl AudioRecorder {
             stream: None,
             source_sample_rate: 48000,
             source_channels: 1,
+            level: Arc::new(AtomicU32::new(0)),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn start(&mut self, mic_name: &str) -> Result<(), String> {
+    pub fn start(&mut self, app: &AppHandle, mic_name: &str) -> Result<(), String> {
         // Clear any leftover samples from previous recording
         self.samples.lock().unwrap().clear();
 
@@ -78,7 +85,7 @@ impl AudioRecorder {
         let sample_rate = default_config.sample_rate().0;
         let channels = default_config.channels();
 
-        println!("[Typr] Mic config: {}Hz, {} channels", sample_rate, channels);
+        println!("[Mabel] Mic config: {}Hz, {} channels", sample_rate, channels);
 
         self.source_sample_rate = sample_rate;
         self.source_channels = channels;
@@ -90,15 +97,23 @@ impl AudioRecorder {
         };
 
         let samples = self.samples.clone();
+        let level = self.level.clone();
         let stream = device
             .build_input_stream(
                 &config,
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
                     let mut buf = samples.lock().unwrap();
                     buf.extend_from_slice(data);
+
+                    // RMS for the latest chunk drives the waveform.
+                    if !data.is_empty() {
+                        let sum_sq: f32 = data.iter().map(|s| s * s).sum();
+                        let rms = (sum_sq / data.len() as f32).sqrt();
+                        level.store(rms.to_bits(), Ordering::Relaxed);
+                    }
                 },
                 |err| {
-                    eprintln!("[Typr] Audio stream error: {}", err);
+                    eprintln!("[Mabel] Audio stream error: {}", err);
                 },
                 None,
             )
@@ -106,20 +121,38 @@ impl AudioRecorder {
 
         stream.play().map_err(|e| e.to_string())?;
         self.stream = Some(SendStream(stream));
-        println!("[Typr] Audio recording started");
+
+        // Emit audio-level events at ~30 Hz so the overlay waveform stays smooth
+        // without flooding the IPC channel.
+        self.running.store(true, Ordering::Relaxed);
+        let running = self.running.clone();
+        let level_handle = self.level.clone();
+        let app_handle = app.clone();
+        tokio::spawn(async move {
+            while running.load(Ordering::Relaxed) {
+                let lvl = f32::from_bits(level_handle.load(Ordering::Relaxed));
+                let _ = app_handle.emit("audio-level", lvl);
+                tokio::time::sleep(Duration::from_millis(33)).await;
+            }
+            // One last zero so the bars settle.
+            let _ = app_handle.emit("audio-level", 0.0_f32);
+        });
+
+        println!("[Mabel] Audio recording started");
         Ok(())
     }
 
     pub fn stop_and_save(&mut self, output_path: &PathBuf) -> Result<PathBuf, String> {
+        self.running.store(false, Ordering::Relaxed);
         self.stream = None; // Drop stops the stream
-        println!("[Typr] Audio recording stopped");
+        println!("[Mabel] Audio recording stopped");
 
         let samples = self.samples.lock().unwrap();
         if samples.is_empty() {
             return Err("No audio captured".to_string());
         }
 
-        println!("[Typr] Captured {} raw samples", samples.len());
+        println!("[Mabel] Captured {} raw samples", samples.len());
 
         // Convert to mono if multi-channel
         let mono: Vec<f32> = if self.source_channels > 1 {
@@ -133,7 +166,11 @@ impl AudioRecorder {
 
         // Downsample to 16kHz for whisper.cpp
         let resampled = resample(&mono, self.source_sample_rate, 16000);
-        println!("[Typr] Resampled to {} samples at 16kHz", resampled.len());
+        println!("[Mabel] Resampled to {} samples at 16kHz", resampled.len());
+
+        // Peak-normalize to roughly -3 dB so quiet recordings don't push Whisper into
+        // hallucinating non-speech tags like "(music)". Skip if effectively silent.
+        let normalized = peak_normalize(&resampled, 0.707);
 
         let spec = WavSpec {
             channels: 1,
@@ -143,7 +180,7 @@ impl AudioRecorder {
         };
 
         let mut writer = WavWriter::create(output_path, spec).map_err(|e| e.to_string())?;
-        for &sample in resampled.iter() {
+        for &sample in normalized.iter() {
             let amplitude = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
             writer.write_sample(amplitude).map_err(|e| e.to_string())?;
         }
@@ -152,9 +189,21 @@ impl AudioRecorder {
         drop(samples);
         self.samples.lock().unwrap().clear();
 
-        println!("[Typr] WAV saved to {:?}", output_path);
+        println!("[Mabel] WAV saved to {:?}", output_path);
         Ok(output_path.clone())
     }
+}
+
+/// Peak-normalize a buffer so its loudest sample sits at `target` (0.0 to 1.0).
+/// Leaves the buffer alone if the peak is below 0.001 (effectively silent) to
+/// avoid amplifying pure noise to full scale.
+fn peak_normalize(samples: &[f32], target: f32) -> Vec<f32> {
+    let peak = samples.iter().fold(0.0_f32, |acc, &s| acc.max(s.abs()));
+    if peak < 0.001 {
+        return samples.to_vec();
+    }
+    let gain = target / peak;
+    samples.iter().map(|s| (s * gain).clamp(-1.0, 1.0)).collect()
 }
 
 /// Simple linear interpolation resampler
