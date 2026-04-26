@@ -44,8 +44,6 @@ pub async fn transcribe_local(
             "0.6",
             // Suppress non-speech tokens like "(music)" / "[BLANK_AUDIO]".
             "--suppress-nst",
-            // Each streaming chunk is independent, don't carry context forward.
-            "--no-context",
             // Steer Whisper toward dictation.
             "--prompt",
             "Dictation transcript:",

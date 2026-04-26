@@ -93,9 +93,10 @@ impl Recorder {
         let _ = app.emit("recording-state", RecordingState::Recording);
         update_overlay(app, &RecordingState::Recording);
 
-        if settings.dictation_sounds {
-            system_ui::play_sound("Tink");
-        }
+        // Intentionally NOT playing a start sound here. Spawning afplay right
+        // after the cpal input stream opens triggers an audio session
+        // reconfiguration on Apple Silicon and the mic gain drops to near-zero,
+        // which makes Whisper see only ambient noise. Bug-fixed post v1.0.0.
 
         Ok(())
     }
