@@ -52,7 +52,7 @@ impl Recorder {
         }
 
         let mut recorder = self.audio_recorder.lock().unwrap();
-        recorder.start(mic_name)?;
+        recorder.start(app, mic_name)?;
 
         *state = RecordingState::Recording;
         let _ = app.emit("recording-state", RecordingState::Recording);
@@ -98,7 +98,10 @@ impl Recorder {
             _ => return Err(format!("Unknown engine: {}", settings.engine)),
         };
 
-        // Cleanup temp file
+        // DEBUG: keep a copy of the WAV so it can be played back to verify audio quality.
+        let debug_path = app_dir.join("last_recording.wav");
+        let _ = std::fs::copy(&temp_path, &debug_path);
+        println!("[Mabel DEBUG] Kept WAV copy at {:?}", debug_path);
         let _ = std::fs::remove_file(&temp_path);
 
         // Clean up text

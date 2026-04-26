@@ -233,9 +233,9 @@ fn main() {
                 let size = m.size();
                 let scale = m.scale_factor();
                 let logical_w = size.width as f64 / scale;
-                ((logical_w - 60.0) as i32, 10_i32)
+                ((logical_w - 380.0) as i32, 12_i32)
             } else {
-                (1380, 10)
+                (1040, 12)
             };
 
             let overlay = WebviewWindowBuilder::new(
@@ -244,7 +244,7 @@ fn main() {
                 WebviewUrl::App("src/overlay.html".into()),
             )
             .title("")
-            .inner_size(50.0, 50.0)
+            .inner_size(360.0, 60.0)
             .position(x as f64, y as f64)
             .resizable(false)
             .decorations(false)
@@ -256,7 +256,12 @@ fn main() {
             .build();
 
             match overlay {
-                Ok(_) => println!("[Mabel] Overlay window created"),
+                Ok(w) => {
+                    // Follow the user across virtual desktops / Spaces and stay visible
+                    // even in fullscreen apps.
+                    let _ = w.set_visible_on_all_workspaces(true);
+                    println!("[Mabel] Overlay window created");
+                }
                 Err(e) => eprintln!("[Mabel] Failed to create overlay: {}", e),
             }
 

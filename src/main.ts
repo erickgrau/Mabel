@@ -22,58 +22,78 @@ interface DownloadProgress {
   percent: number;
 }
 
-// DOM elements
-const statusDot = document.getElementById("status-dot")!;
-const statusText = document.getElementById("status-text")!;
-const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
-const engineLocal = document.getElementById("engine-local")!;
-const engineCloud = document.getElementById("engine-cloud")!;
-const localSettings = document.getElementById("local-settings")!;
-const cloudSettings = document.getElementById("cloud-settings")!;
-const modelSelect = document.getElementById("model-select") as HTMLSelectElement;
-const downloadBtn = document.getElementById("download-btn")!;
-const downloadProgress = document.getElementById("download-progress")!;
-const progressFill = document.getElementById("progress-fill")!;
-const groqKey = document.getElementById("groq-key") as HTMLInputElement;
-const modeToggle = document.getElementById("mode-toggle")!;
-const modePtt = document.getElementById("mode-ptt")!;
-const hotkeyText = document.getElementById("hotkey-text")!;
+const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
+  document.getElementById(id) as T;
 
-// Section navigation
-const navItems = document.querySelectorAll(".nav-item");
-const sections = document.querySelectorAll(".content-section");
+const statusDot = $("status-dot");
+const statusText = $("status-text");
+const homeHotkey = $("home-hotkey");
+const micSelect = $<HTMLSelectElement>("mic-select");
+const engineLocal = $("engine-local");
+const engineCloud = $("engine-cloud");
+const localSettings = $("local-settings");
+const cloudSettings = $("cloud-settings");
+const modelSelect = $<HTMLSelectElement>("model-select");
+const downloadBtn = $<HTMLButtonElement>("download-btn");
+const downloadProgress = $("download-progress");
+const progressFill = $("progress-fill");
+const groqKey = $<HTMLInputElement>("groq-key");
+const modeToggle = $("mode-toggle");
+const modePtt = $("mode-ptt");
+const hotkeyText = $("hotkey-text");
 
-navItems.forEach((item) => {
+const appWindow = getCurrentWindow();
+$("titlebar").addEventListener("mousedown", (e) => {
+  if ((e.target as HTMLElement).closest("button, select, input, a, kbd")) return;
+  appWindow.startDragging();
+});
+
+// Sidebar nav (Home + locked Pro views)
+document.querySelectorAll<HTMLElement>(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
-    const target = item.getAttribute("data-section");
-    navItems.forEach((n) => n.classList.remove("active"));
-    sections.forEach((s) => s.classList.remove("active"));
+    const view = item.dataset.view!;
+    document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+    document.querySelectorAll<HTMLElement>(".view").forEach((s) => s.classList.remove("active"));
     item.classList.add("active");
-    document.getElementById(`section-${target}`)?.classList.add("active");
+    document.querySelector(`.view[data-view="${view}"]`)?.classList.add("active");
   });
 });
 
-// Window drag — titlebar and sidebar empty space
-const titlebar = document.getElementById("titlebar")!;
-const sidebar = document.getElementById("sidebar")!;
-const appWindow = getCurrentWindow();
-
-titlebar.addEventListener("mousedown", (e) => {
-  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
-  appWindow.startDragging();
+// Settings modal open/close
+const modal = $("settings-modal");
+$("open-settings").addEventListener("click", () => modal.classList.remove("hidden"));
+$("close-settings").addEventListener("click", () => modal.classList.add("hidden"));
+modal.querySelector(".modal-backdrop")?.addEventListener("click", () => modal.classList.add("hidden"));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !modal.classList.contains("hidden") && !capturingHotkey) {
+    modal.classList.add("hidden");
+  }
 });
 
-sidebar.addEventListener("mousedown", (e) => {
-  if ((e.target as HTMLElement).closest("button, select, input, a, .nav-item")) return;
-  appWindow.startDragging();
+// Modal pane nav
+document.querySelectorAll<HTMLElement>(".modal-nav-item").forEach((item) => {
+  item.addEventListener("click", () => {
+    if (item.classList.contains("locked")) return;
+    const pane = item.dataset.pane!;
+    document.querySelectorAll(".modal-nav-item").forEach((n) => n.classList.remove("active"));
+    document.querySelectorAll(".modal-pane").forEach((p) => p.classList.remove("active"));
+    item.classList.add("active");
+    document.querySelector(`.modal-pane[data-pane="${pane}"]`)?.classList.add("active");
+  });
 });
+
+// Activate Pro buttons (placeholder)
+const proHandler = () => alert("Mabel Pro is coming soon. Local LLM cleanup, app-aware formatting, and more.");
+$("open-pro").addEventListener("click", proHandler);
+$("cta-pro").addEventListener("click", proHandler);
+document.querySelectorAll(".locked-card .btn-primary").forEach((b) => b.addEventListener("click", proHandler));
+$("open-help").addEventListener("click", () => alert("Hold the hotkey, speak, release. The transcription is pasted at your cursor."));
 
 let currentSettings: Settings;
 
 async function loadSettings() {
   currentSettings = await invoke<Settings>("get_settings");
 
-  // Populate mic dropdown
   const mics = await invoke<MicDevice[]>("list_microphones");
   micSelect.innerHTML = "";
   mics.forEach((mic) => {
@@ -82,23 +102,17 @@ async function loadSettings() {
     option.textContent = mic.name + (mic.is_default ? " (default)" : "");
     micSelect.appendChild(option);
   });
-  micSelect.value = currentSettings.microphone;
+  micSelect.value = currentSettings.microphone || mics.find((m) => m.is_default)?.name || "";
 
-  // Engine
   setEngine(currentSettings.engine);
-
-  // Model
   modelSelect.value = currentSettings.whisperModel;
   await checkModelStatus();
-
-  // Groq key
   groqKey.value = currentSettings.groqApiKey;
-
-  // Recording mode
   setRecordingMode(currentSettings.recordingMode);
 
-  // Hotkey
-  hotkeyText.textContent = currentSettings.hotkey.replace("CmdOrCtrl", "Cmd");
+  const formatted = formatHotkey(currentSettings.hotkey);
+  hotkeyText.textContent = formatted;
+  homeHotkey.textContent = formatted;
 }
 
 function setEngine(engine: string) {
@@ -119,8 +133,8 @@ async function checkModelStatus() {
   const downloaded = await invoke<boolean>("check_model_downloaded", {
     modelSize: modelSelect.value,
   });
-  downloadBtn.textContent = downloaded ? "\u2713" : "Download";
-  (downloadBtn as HTMLButtonElement).disabled = downloaded;
+  downloadBtn.textContent = downloaded ? "Downloaded" : "Download";
+  downloadBtn.disabled = downloaded;
 }
 
 async function saveSettings() {
@@ -130,70 +144,42 @@ async function saveSettings() {
   await invoke("save_settings", { settings: currentSettings });
 }
 
-// Event listeners
-engineLocal.addEventListener("click", () => {
-  setEngine("local");
-  saveSettings();
-});
-
-engineCloud.addEventListener("click", () => {
-  setEngine("cloud");
-  saveSettings();
-});
-
+engineLocal.addEventListener("click", () => { setEngine("local"); saveSettings(); });
+engineCloud.addEventListener("click", () => { setEngine("cloud"); saveSettings(); });
 micSelect.addEventListener("change", () => saveSettings());
-
-modelSelect.addEventListener("change", async () => {
-  await checkModelStatus();
-  saveSettings();
-});
+modelSelect.addEventListener("change", async () => { await checkModelStatus(); saveSettings(); });
 
 downloadBtn.addEventListener("click", async () => {
-  (downloadBtn as HTMLButtonElement).disabled = true;
+  downloadBtn.disabled = true;
   downloadProgress.classList.remove("hidden");
   progressFill.style.width = "0%";
-
   try {
     await invoke("download_model", { modelSize: modelSelect.value });
-    downloadBtn.textContent = "\u2713";
+    downloadBtn.textContent = "Downloaded";
   } catch (e) {
     downloadBtn.textContent = "Retry";
-    (downloadBtn as HTMLButtonElement).disabled = false;
+    downloadBtn.disabled = false;
     console.error("Download failed:", e);
   }
   downloadProgress.classList.add("hidden");
 });
 
 groqKey.addEventListener("change", () => saveSettings());
+modeToggle.addEventListener("click", () => { setRecordingMode("toggle"); saveSettings(); });
+modePtt.addEventListener("click", () => { setRecordingMode("push-to-talk"); saveSettings(); });
 
-modeToggle.addEventListener("click", () => {
-  setRecordingMode("toggle");
-  saveSettings();
-});
-
-modePtt.addEventListener("click", () => {
-  setRecordingMode("push-to-talk");
-  saveSettings();
-});
-
-// Hotkey rebinding
 function formatHotkey(accelerator: string): string {
   return accelerator.replace("CmdOrCtrl", "Cmd");
 }
 
 function eventToAccelerator(e: KeyboardEvent): string | null {
-  // Build a Tauri-compatible accelerator string from a KeyboardEvent.
-  // Returns null if the event is just a modifier or an unsupported key.
   if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return null;
-
   const parts: string[] = [];
   if (e.metaKey || e.ctrlKey) parts.push("CmdOrCtrl");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
-
   const code = e.code;
   let key: string | null = null;
-
   if (code === "Space") key = "Space";
   else if (code === "Enter") key = "Enter";
   else if (code === "Tab") key = "Tab";
@@ -216,12 +202,8 @@ function eventToAccelerator(e: KeyboardEvent): string | null {
   else if (code === "Slash") key = "/";
   else if (code === "Backquote") key = "`";
   else return null;
-
-  // A bare key with no modifier is a bad global shortcut (it would steal
-  // every keystroke). Require at least one modifier unless it's a function key.
   const isFunctionKey = /^F\d{1,2}$/.test(key);
   if (parts.length === 0 && !isFunctionKey) return null;
-
   parts.push(key);
   return parts.join("+");
 }
@@ -248,20 +230,19 @@ hotkeyText.addEventListener("click", () => {
       cleanup();
       return;
     }
-
     const accelerator = eventToAccelerator(e);
     if (!accelerator) {
-      // Wait for a usable combination.
       e.preventDefault();
       return;
     }
     e.preventDefault();
     e.stopPropagation();
-
     try {
       await invoke("update_hotkey", { hotkey: accelerator });
       currentSettings.hotkey = accelerator;
-      hotkeyText.textContent = formatHotkey(accelerator);
+      const formatted = formatHotkey(accelerator);
+      hotkeyText.textContent = formatted;
+      homeHotkey.textContent = formatted;
     } catch (err) {
       console.error("update_hotkey failed:", err);
       hotkeyText.textContent = previousText;
@@ -274,27 +255,22 @@ hotkeyText.addEventListener("click", () => {
   document.addEventListener("keydown", onKey, true);
 });
 
-// Listen for recording state changes
 listen<string>("recording-state", (event) => {
   const state = event.payload;
-  statusDot.className = "";
+  statusDot.className = "status-dot";
   if (state === "Recording") {
     statusDot.classList.add("recording");
-    statusText.textContent = "Recording...";
+    statusText.textContent = "Recording";
   } else if (state === "Transcribing") {
     statusDot.classList.add("transcribing");
-    statusText.textContent = "Transcribing...";
+    statusText.textContent = "Transcribing";
   } else {
-    statusDot.classList.add("ready");
     statusText.textContent = "Ready";
   }
 });
 
-// Listen for download progress
 listen<DownloadProgress>("download-progress", (event) => {
-  const { percent } = event.payload;
-  progressFill.style.width = `${percent}%`;
+  progressFill.style.width = `${event.payload.percent}%`;
 });
 
-// Initialize
 loadSettings();

@@ -37,6 +37,14 @@ pub async fn transcribe_local(
             "--no-timestamps",
             "-l",
             "en",
+            // Lower the no-speech threshold so quiet but real speech isn't dropped.
+            "--no-speech-thold",
+            "0.3",
+            // Suppress non-speech tokens like "(music)" / "[BLANK_AUDIO]".
+            "--suppress-nst",
+            // Steer Whisper toward dictation rather than music captioning.
+            "--prompt",
+            "Dictation transcript:",
         ])
         .output()
         .await
@@ -48,6 +56,7 @@ pub async fn transcribe_local(
     }
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    println!("[Mabel DEBUG] Whisper raw output: {:?}", text);
     Ok(text)
 }
 

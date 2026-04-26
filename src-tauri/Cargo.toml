@@ -1,8 +1,9 @@
 [package]
 name = "mabel"
 version = "0.1.0"
-description = "A dictation app powered by Whisper"
-authors = ["Chibi Tech"]
+description = "Privacy-first macOS dictation. Audio never leaves your Mac."
+authors = ["Chibitek Labs"]
+license = "Copyright (c) 2026 Chibitek Labs. All rights reserved."
 edition = "2021"
 
 [lib]
