@@ -479,7 +479,61 @@ listen<string>("recording-state", (event) => {
 
 listen<DownloadProgress>("download-progress", (event) => {
   progressFill.style.width = `${event.payload.percent}%`;
+  // Mirror to first-run modal if it's the active context.
+  const firstrunFill = document.getElementById("firstrun-fill");
+  const firstrunPct = document.getElementById("firstrun-pct");
+  if (firstrunFill) firstrunFill.style.width = `${event.payload.percent}%`;
+  if (firstrunPct) firstrunPct.textContent = `${Math.round(event.payload.percent)}%`;
 });
+
+async function maybeRunFirstTimeSetup() {
+  const settings = await invoke<Settings>("get_settings");
+  const smallReady = await invoke<boolean>("check_model_downloaded", { modelSize: "small" });
+  const mediumReady = await invoke<boolean>("check_model_downloaded", { modelSize: "medium" });
+  if (smallReady || mediumReady) return; // already have a model
+
+  const modal = document.getElementById("firstrun-modal")!;
+  const body = document.getElementById("firstrun-body")!;
+  const foot = document.getElementById("firstrun-foot")!;
+  const done = document.getElementById("firstrun-done") as HTMLButtonElement;
+  const retry = document.getElementById("firstrun-retry") as HTMLButtonElement;
+  const fill = document.getElementById("firstrun-fill")!;
+  const pct = document.getElementById("firstrun-pct")!;
+  modal.classList.remove("hidden");
+
+  const startDownload = async () => {
+    body.textContent = "Downloading the Whisper Small model (~500 MB) so dictation works fully offline. This is a one-time setup.";
+    foot.classList.remove("hidden");
+    done.classList.add("hidden");
+    retry.classList.add("hidden");
+    fill.style.width = "0%";
+    pct.textContent = "0%";
+    try {
+      await invoke("download_model", { modelSize: "small" });
+      // Persist Small as the active model.
+      currentSettings = { ...settings, whisperModel: "small" };
+      await invoke("save_settings", { settings: currentSettings });
+      body.textContent = "Whisper Small is ready. Mabel works fully offline, on this Mac. Audio never leaves the device.";
+      foot.innerHTML = 'For better accuracy on long dictations, switch to the <b>Medium</b> model anytime in <b>Settings → Engine</b>. It is a larger one-time download.';
+      fill.style.width = "100%";
+      pct.textContent = "100%";
+      done.classList.remove("hidden");
+    } catch (e) {
+      console.error("first-run download failed:", e);
+      body.textContent = "Couldn't download the model. Check your internet connection and retry.";
+      foot.classList.add("hidden");
+      retry.classList.remove("hidden");
+    }
+  };
+
+  done.addEventListener("click", () => {
+    modal.classList.add("hidden");
+    loadSettings();
+  });
+  retry.addEventListener("click", () => startDownload());
+
+  startDownload();
+}
 
 listen("stats-updated", () => {
   loadStats();
@@ -488,3 +542,4 @@ listen("stats-updated", () => {
 loadSettings();
 loadVersion();
 loadStats();
+maybeRunFirstTimeSetup();

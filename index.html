@@ -312,6 +312,27 @@
       </main>
     </div>
 
+    <div id="firstrun-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="firstrun-panel">
+        <div class="firstrun-icon">
+          <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+            <rect width="44" height="44" rx="12" fill="#E89898"/>
+            <path d="M14 17l6 9-6 9M22 17l6 9-6 9" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2 class="firstrun-title">Setting up Mabel</h2>
+        <p class="firstrun-body" id="firstrun-body">Downloading the Whisper Small model (~500 MB) so dictation works fully offline. This is a one-time setup.</p>
+        <div class="firstrun-progress">
+          <div id="firstrun-bar"><div id="firstrun-fill"></div></div>
+          <div class="firstrun-pct" id="firstrun-pct">0%</div>
+        </div>
+        <p class="firstrun-foot" id="firstrun-foot">You can switch to the Medium model later in <b>Settings → Engine</b> for better accuracy.</p>
+        <button type="button" id="firstrun-done" class="btn-primary hidden">Get started</button>
+        <button type="button" id="firstrun-retry" class="btn-secondary hidden">Retry download</button>
+      </div>
+    </div>
+
     <div id="settings-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-panel">

@@ -1,6 +1,6 @@
 [package]
 name = "mabel"
-version = "1.0.2"
+version = "1.0.3"
 description = "Privacy-first macOS dictation. Audio never leaves your Mac."
 authors = ["Chibitek Labs"]
 license = "Copyright (c) 2026 Chibitek Labs. All rights reserved."
