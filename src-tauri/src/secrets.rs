@@ -15,6 +15,12 @@ pub fn get_groq_key() -> Result<String, String> {
     }
 }
 
+/// Fast non-throwing check for "is a key stored?" — used to render UI status
+/// without prompting the user for keychain access.
+pub fn has_groq_key() -> bool {
+    matches!(entry().and_then(|e| e.get_password().map_err(|err| err.to_string())), Ok(s) if !s.is_empty())
+}
+
 pub fn set_groq_key(value: &str) -> Result<(), String> {
     let e = entry()?;
     if value.is_empty() {

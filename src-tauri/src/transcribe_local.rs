@@ -37,12 +37,16 @@ pub async fn transcribe_local(
             "--no-timestamps",
             "-l",
             "en",
-            // Lower the no-speech threshold so quiet but real speech isn't dropped.
+            // Default 0.6 threshold. Our VAD already drops silent chunks, so
+            // anything that reaches Whisper should plausibly contain speech;
+            // we don't need to be permissive here and risk hallucinations.
             "--no-speech-thold",
-            "0.3",
+            "0.6",
             // Suppress non-speech tokens like "(music)" / "[BLANK_AUDIO]".
             "--suppress-nst",
-            // Steer Whisper toward dictation rather than music captioning.
+            // Each streaming chunk is independent, don't carry context forward.
+            "--no-context",
+            // Steer Whisper toward dictation.
             "--prompt",
             "Dictation transcript:",
         ])

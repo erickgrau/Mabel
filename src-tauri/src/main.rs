@@ -143,8 +143,11 @@ fn build_shortcut_handler(
                             let current = state.recorder.get_state();
                             println!("[Mabel] PTT mode, current state: {:?}", current);
                             if current == RecordingState::Ready {
-                                let mic = state.settings.lock().unwrap().microphone.clone();
-                                match state.recorder.start_recording(&handle, &mic) {
+                                let (mic, settings) = {
+                                    let s = state.settings.lock().unwrap();
+                                    (s.microphone.clone(), s.clone())
+                                };
+                                match state.recorder.start_recording(&handle, &mic, &settings, &state.app_dir) {
                                     Ok(_) => println!("[Mabel] Recording started"),
                                     Err(e) => eprintln!("[Mabel] Start recording error: {}", e),
                                 }
@@ -185,8 +188,11 @@ async fn do_toggle_recording(
     let current_state = state.recorder.get_state();
     match current_state {
         RecordingState::Ready => {
-            let mic = state.settings.lock().unwrap().microphone.clone();
-            state.recorder.start_recording(app, &mic)?;
+            let (mic, settings) = {
+                let s = state.settings.lock().unwrap();
+                (s.microphone.clone(), s.clone())
+            };
+            state.recorder.start_recording(app, &mic, &settings, &state.app_dir)?;
             Ok("recording".to_string())
         }
         RecordingState::Recording => {
@@ -209,6 +215,10 @@ fn main() {
     let initial_hotkey = settings.hotkey.clone();
 
     tauri::Builder::default()
+        // Single-instance plugin temporarily disabled while we debug a startup
+        // crash. Re-enable once the cause is isolated. Until then, the user
+        // should avoid double-launching Mabel manually.
+        .plugin(tauri_nspanel::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
@@ -228,14 +238,16 @@ fn main() {
         ])
         .setup(move |app| {
             // Create the overlay window (small mic icon, top-right, always on top)
+            // Default position: top center of the primary screen.
             let monitor = app.primary_monitor().ok().flatten();
+            let overlay_w: f64 = 360.0;
             let (x, y) = if let Some(m) = monitor {
                 let size = m.size();
                 let scale = m.scale_factor();
                 let logical_w = size.width as f64 / scale;
-                ((logical_w - 380.0) as i32, 12_i32)
+                (((logical_w - overlay_w) / 2.0) as i32, 12_i32)
             } else {
-                (1040, 12)
+                (480, 12)
             };
 
             let overlay = WebviewWindowBuilder::new(
@@ -257,9 +269,18 @@ fn main() {
 
             match overlay {
                 Ok(w) => {
-                    // Follow the user across virtual desktops / Spaces and stay visible
-                    // even in fullscreen apps.
-                    let _ = w.set_visible_on_all_workspaces(true);
+                    // Don't call Tauri's set_visible_on_all_workspaces; it dispatches
+                    // an async task on the main thread that can clobber our
+                    // collectionBehavior write. Set every NSWindow flag we need
+                    // directly via objc, synchronously, on the main thread.
+                    // Defensive: a panic in objc-land here would propagate
+                    // into AppKit's did_finish_launching and abort the app.
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        mabel_lib::overlay_macos::apply_overlay_behavior(&w);
+                    }));
+                    if result.is_err() {
+                        eprintln!("[Mabel] apply_overlay_behavior panicked; overlay behavior not applied");
+                    }
                     println!("[Mabel] Overlay window created");
                 }
                 Err(e) => eprintln!("[Mabel] Failed to create overlay: {}", e),
@@ -282,3 +303,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

@@ -142,34 +142,36 @@ impl AudioRecorder {
         Ok(())
     }
 
-    pub fn stop_and_save(&mut self, output_path: &PathBuf) -> Result<PathBuf, String> {
-        self.running.store(false, Ordering::Relaxed);
-        self.stream = None; // Drop stops the stream
-        println!("[Mabel] Audio recording stopped");
-
-        let samples = self.samples.lock().unwrap();
-        if samples.is_empty() {
-            return Err("No audio captured".to_string());
+    /// Drain everything captured so far into a 16 kHz mono WAV.
+    /// Returns Ok(Some(rms)) with the pre-normalization mean RMS of the chunk
+    /// if a file was written, Ok(None) if nothing was buffered. The caller can
+    /// gate transcription on the RMS to avoid feeding silence to Whisper, which
+    /// otherwise hallucinates ("thank you", "okay", etc) on near-silent input.
+    /// Does not stop the stream, so it's safe to call mid-recording.
+    pub fn drain_to_wav(&mut self, output_path: &PathBuf) -> Result<Option<f32>, String> {
+        let raw = std::mem::take(&mut *self.samples.lock().unwrap());
+        if raw.is_empty() {
+            return Ok(None);
         }
 
-        println!("[Mabel] Captured {} raw samples", samples.len());
-
-        // Convert to mono if multi-channel
         let mono: Vec<f32> = if self.source_channels > 1 {
-            samples
-                .chunks(self.source_channels as usize)
+            raw.chunks(self.source_channels as usize)
                 .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
                 .collect()
         } else {
-            samples.clone()
+            raw
         };
 
-        // Downsample to 16kHz for whisper.cpp
         let resampled = resample(&mono, self.source_sample_rate, 16000);
-        println!("[Mabel] Resampled to {} samples at 16kHz", resampled.len());
 
-        // Peak-normalize to roughly -3 dB so quiet recordings don't push Whisper into
-        // hallucinating non-speech tags like "(music)". Skip if effectively silent.
+        // Pre-normalization RMS. Driver will use this to skip Whisper for chunks
+        // that are mostly silence with brief noise blips.
+        let mean_rms = if resampled.is_empty() {
+            0.0
+        } else {
+            (resampled.iter().map(|s| s * s).sum::<f32>() / resampled.len() as f32).sqrt()
+        };
+
         let normalized = peak_normalize(&resampled, 0.707);
 
         let spec = WavSpec {
@@ -185,12 +187,29 @@ impl AudioRecorder {
             writer.write_sample(amplitude).map_err(|e| e.to_string())?;
         }
         writer.finalize().map_err(|e| e.to_string())?;
+        Ok(Some(mean_rms))
+    }
 
-        drop(samples);
-        self.samples.lock().unwrap().clear();
+    pub fn stop_and_save(&mut self, output_path: &PathBuf) -> Result<PathBuf, String> {
+        self.running.store(false, Ordering::Relaxed);
+        self.stream = None; // Drop stops the stream
+        println!("[Mabel] Audio recording stopped");
 
+        let saved = self.drain_to_wav(output_path)?;
+        if saved.is_none() {
+            return Err("No audio captured".to_string());
+        }
         println!("[Mabel] WAV saved to {:?}", output_path);
         Ok(output_path.clone())
+    }
+
+    pub fn current_level(&self) -> f32 {
+        f32::from_bits(self.level.load(Ordering::Relaxed))
+    }
+
+    pub fn stop_stream_only(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+        self.stream = None;
     }
 }
 

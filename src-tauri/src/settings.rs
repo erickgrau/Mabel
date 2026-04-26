@@ -15,7 +15,15 @@ pub struct Settings {
     #[serde(rename = "recordingMode")]
     pub recording_mode: String,
     pub hotkey: String,
+    #[serde(default = "default_streaming")]
+    pub streaming: bool,
+    /// Tracks "is a Groq key in the keychain?" without ever actually reading the
+    /// keychain, so the UI can show "Saved" status without prompting.
+    #[serde(rename = "groqKeyConfigured", default)]
+    pub groq_key_configured: bool,
 }
+
+fn default_streaming() -> bool { true }
 
 /// What we actually serialize to disk. Excludes the Groq API key, which lives
 /// in the OS keychain. Keeps the same JSON shape the UI expects, minus the key.
@@ -28,6 +36,10 @@ struct DiskSettings {
     #[serde(rename = "recordingMode")]
     recording_mode: String,
     hotkey: String,
+    #[serde(default = "default_streaming")]
+    streaming: bool,
+    #[serde(rename = "groqKeyConfigured", default)]
+    groq_key_configured: bool,
 }
 
 impl From<&Settings> for DiskSettings {
@@ -38,6 +50,8 @@ impl From<&Settings> for DiskSettings {
             whisper_model: s.whisper_model.clone(),
             recording_mode: s.recording_mode.clone(),
             hotkey: s.hotkey.clone(),
+            streaming: s.streaming,
+            groq_key_configured: s.groq_key_configured,
         }
     }
 }
@@ -51,6 +65,8 @@ impl Default for Settings {
             groq_api_key: String::new(),
             recording_mode: "toggle".to_string(),
             hotkey: "CmdOrCtrl+Shift+Space".to_string(),
+            streaming: true,
+            groq_key_configured: false,
         }
     }
 }
@@ -62,7 +78,7 @@ impl Settings {
 
     pub fn load(app_dir: &PathBuf) -> Self {
         let path = Self::config_path(app_dir);
-        let (mut settings, needs_migration) = match fs::read_to_string(&path) {
+        let (settings, needs_migration) = match fs::read_to_string(&path) {
             Ok(contents) => {
                 // Detect plaintext groqApiKey in old config.json and stage it
                 // for migration into the keychain.
@@ -83,6 +99,8 @@ impl Settings {
                         groq_api_key: String::new(),
                         recording_mode: d.recording_mode,
                         hotkey: d.hotkey,
+                        streaming: d.streaming,
+                        groq_key_configured: d.groq_key_configured,
                     })
                     .unwrap_or_default();
 
@@ -96,9 +114,11 @@ impl Settings {
             Err(_) => (Self::default(), false),
         };
 
-        settings.groq_api_key = secrets::get_groq_key().unwrap_or_default();
-
-        // Only rewrite config.json if we just stripped a plaintext key out of it.
+        // Don't proactively read the Groq key from the keychain on startup.
+        // Unsigned dev builds get a new binary signature on every rebuild, which
+        // causes macOS to prompt for keychain access repeatedly and can hang the
+        // launch. The key is fetched on-demand at cloud transcription time, and
+        // the UI shows a "key is set" status without exposing the value.
         if needs_migration {
             let _ = settings.save(app_dir);
         }
@@ -106,13 +126,26 @@ impl Settings {
         settings
     }
 
+
     pub fn save(&self, app_dir: &PathBuf) -> Result<(), String> {
         let path = Self::config_path(app_dir);
         fs::create_dir_all(app_dir).map_err(|e| e.to_string())?;
-        let disk: DiskSettings = self.into();
+        // If a non-empty key came in, flip the configured flag so the UI can
+        // show "Saved" without ever reading the keychain back.
+        let mut to_disk = self.clone();
+        if !to_disk.groq_api_key.is_empty() {
+            to_disk.groq_key_configured = true;
+        }
+        let disk: DiskSettings = (&to_disk).into();
         let json = serde_json::to_string_pretty(&disk).map_err(|e| e.to_string())?;
         fs::write(&path, json).map_err(|e| e.to_string())?;
-        secrets::set_groq_key(&self.groq_api_key)?;
+        // Only touch the keychain if the caller actually provided a non-empty
+        // key. Settings saves from the UI ship an empty groq_api_key on every
+        // change (mic, mode, hotkey, etc) and we don't want each one to trigger
+        // a keychain prompt on unsigned dev builds.
+        if !self.groq_api_key.is_empty() {
+            secrets::set_groq_key(&self.groq_api_key)?;
+        }
         Ok(())
     }
 }

@@ -9,6 +9,8 @@ interface Settings {
   groqApiKey: string;
   recordingMode: string;
   hotkey: string;
+  streaming: boolean;
+  groqKeyConfigured: boolean;
 }
 
 interface MicDevice {
@@ -38,9 +40,12 @@ const downloadBtn = $<HTMLButtonElement>("download-btn");
 const downloadProgress = $("download-progress");
 const progressFill = $("progress-fill");
 const groqKey = $<HTMLInputElement>("groq-key");
+const keySave = $<HTMLButtonElement>("key-save");
+const keyStatus = $("key-status");
 const modeToggle = $("mode-toggle");
 const modePtt = $("mode-ptt");
 const hotkeyText = $("hotkey-text");
+const streamingToggle = $<HTMLButtonElement>("streaming-toggle");
 
 const appWindow = getCurrentWindow();
 $("titlebar").addEventListener("mousedown", (e) => {
@@ -107,8 +112,13 @@ async function loadSettings() {
   setEngine(currentSettings.engine);
   modelSelect.value = currentSettings.whisperModel;
   await checkModelStatus();
-  groqKey.value = currentSettings.groqApiKey;
+  // The actual key is never echoed back from the keychain. We just show
+  // "Saved" if a key was previously stored, and let the user overwrite it.
+  groqKey.value = "";
+  groqKey.placeholder = currentSettings.groqKeyConfigured ? "•••••••••••••••• (stored)" : "gsk_...";
+  keyStatus.classList.toggle("hidden", !currentSettings.groqKeyConfigured);
   setRecordingMode(currentSettings.recordingMode);
+  streamingToggle.setAttribute("aria-checked", String(currentSettings.streaming));
 
   const formatted = formatHotkey(currentSettings.hotkey);
   hotkeyText.textContent = formatted;
@@ -138,10 +148,36 @@ async function checkModelStatus() {
 }
 
 async function saveSettings() {
+  // Most settings saves should never carry the key — we don't want every mic
+  // change to trip the keychain prompt on unsigned builds. The key is saved
+  // explicitly via the Save button next to the input.
   currentSettings.microphone = micSelect.value;
   currentSettings.whisperModel = modelSelect.value;
-  currentSettings.groqApiKey = groqKey.value;
+  const previousKey = currentSettings.groqApiKey;
+  currentSettings.groqApiKey = "";
   await invoke("save_settings", { settings: currentSettings });
+  currentSettings.groqApiKey = previousKey;
+}
+
+async function saveGroqKey() {
+  const value = groqKey.value.trim();
+  if (!value) return;
+  const settingsWithKey = { ...currentSettings, groqApiKey: value };
+  try {
+    await invoke("save_settings", { settings: settingsWithKey });
+    currentSettings.groqKeyConfigured = true;
+    groqKey.value = "";
+    groqKey.placeholder = "•••••••••••••••• (stored)";
+    keyStatus.textContent = "Saved";
+    keyStatus.classList.remove("hidden");
+    keyStatus.classList.remove("flash");
+    void keyStatus.offsetWidth; // restart animation
+    keyStatus.classList.add("flash");
+  } catch (e) {
+    console.error("save groq key failed:", e);
+    keyStatus.textContent = "Error";
+    keyStatus.classList.remove("hidden");
+  }
 }
 
 engineLocal.addEventListener("click", () => { setEngine("local"); saveSettings(); });
@@ -164,9 +200,19 @@ downloadBtn.addEventListener("click", async () => {
   downloadProgress.classList.add("hidden");
 });
 
-groqKey.addEventListener("change", () => saveSettings());
+keySave.addEventListener("click", () => saveGroqKey());
+groqKey.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") saveGroqKey();
+});
 modeToggle.addEventListener("click", () => { setRecordingMode("toggle"); saveSettings(); });
 modePtt.addEventListener("click", () => { setRecordingMode("push-to-talk"); saveSettings(); });
+
+streamingToggle.addEventListener("click", () => {
+  const next = streamingToggle.getAttribute("aria-checked") !== "true";
+  streamingToggle.setAttribute("aria-checked", String(next));
+  currentSettings.streaming = next;
+  saveSettings();
+});
 
 function formatHotkey(accelerator: string): string {
   return accelerator.replace("CmdOrCtrl", "Cmd");

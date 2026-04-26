@@ -6,8 +6,9 @@ use crate::audio::AudioRecorder;
 use crate::cleanup::cleanup_text;
 use crate::paste::paste_text;
 use crate::settings::Settings;
-use crate::transcribe_local;
+use crate::streaming::{self, StreamingHandle};
 use crate::transcribe_groq;
+use crate::transcribe_local;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum RecordingState {
@@ -31,6 +32,7 @@ fn update_overlay(app: &AppHandle, state: &RecordingState) {
 pub struct Recorder {
     state: Arc<Mutex<RecordingState>>,
     audio_recorder: Arc<Mutex<AudioRecorder>>,
+    streaming_handle: Arc<Mutex<Option<StreamingHandle>>>,
 }
 
 impl Recorder {
@@ -38,6 +40,7 @@ impl Recorder {
         Self {
             state: Arc::new(Mutex::new(RecordingState::Ready)),
             audio_recorder: Arc::new(Mutex::new(AudioRecorder::new())),
+            streaming_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -45,18 +48,39 @@ impl Recorder {
         self.state.lock().unwrap().clone()
     }
 
-    pub fn start_recording(&self, app: &AppHandle, mic_name: &str) -> Result<(), String> {
+    pub fn start_recording(
+        &self,
+        app: &AppHandle,
+        mic_name: &str,
+        settings: &Settings,
+        app_dir: &PathBuf,
+    ) -> Result<(), String> {
         let mut state = self.state.lock().unwrap();
         if *state != RecordingState::Ready {
             return Err("Already recording or transcribing".to_string());
         }
 
-        let mut recorder = self.audio_recorder.lock().unwrap();
-        recorder.start(app, mic_name)?;
+        {
+            let mut recorder = self.audio_recorder.lock().unwrap();
+            recorder.start(app, mic_name)?;
+        }
+
+        // If streaming is enabled, fire up the VAD worker. It pulls from the
+        // shared AudioRecorder buffer and ships chunks to whisper as they arrive.
+        if settings.streaming {
+            let handle = streaming::spawn_vad_worker(
+                app.clone(),
+                self.audio_recorder.clone(),
+                settings.clone(),
+                app_dir.clone(),
+            );
+            *self.streaming_handle.lock().unwrap() = Some(handle);
+        }
 
         *state = RecordingState::Recording;
         let _ = app.emit("recording-state", RecordingState::Recording);
         update_overlay(app, &RecordingState::Recording);
+
         Ok(())
     }
 
@@ -77,15 +101,31 @@ impl Recorder {
             update_overlay(app, &RecordingState::Transcribing);
         }
 
-        let temp_path = app_dir.join("temp_recording.wav");
+        // If streaming was running, shut down the VAD worker, stop the cpal
+        // stream, and flush any tail audio as one last chunk.
+        let streaming_handle = self.streaming_handle.lock().unwrap().take();
+        if let Some(handle) = streaming_handle {
+            handle.stop().await;
+            {
+                let mut recorder = self.audio_recorder.lock().unwrap();
+                recorder.stop_stream_only();
+            }
+            streaming::flush_final_chunk(app, self.audio_recorder.clone(), settings, app_dir).await;
 
-        // Save audio
+            *self.state.lock().unwrap() = RecordingState::Ready;
+            let _ = app.emit("recording-state", RecordingState::Ready);
+            update_overlay(app, &RecordingState::Ready);
+            return Ok(String::new());
+        }
+
+        // Non-streaming: existing one-shot path. Save WAV, transcribe whole thing,
+        // paste once.
+        let temp_path = app_dir.join("temp_recording.wav");
         {
             let mut recorder = self.audio_recorder.lock().unwrap();
             recorder.stop_and_save(&temp_path)?;
         }
 
-        // Transcribe
         let raw_text = match settings.engine.as_str() {
             "local" => {
                 let model_file = transcribe_local::model_filename(&settings.whisper_model)?;
@@ -93,26 +133,22 @@ impl Recorder {
                 transcribe_local::transcribe_local(app, &model_path, &temp_path).await?
             }
             "cloud" => {
-                transcribe_groq::transcribe_groq(&settings.groq_api_key, &temp_path).await?
+                let key = crate::secrets::get_groq_key()?;
+                transcribe_groq::transcribe_groq(&key, &temp_path).await?
             }
             _ => return Err(format!("Unknown engine: {}", settings.engine)),
         };
 
-        // DEBUG: keep a copy of the WAV so it can be played back to verify audio quality.
+        // Keep a copy for debugging, then drop the temp.
         let debug_path = app_dir.join("last_recording.wav");
         let _ = std::fs::copy(&temp_path, &debug_path);
-        println!("[Mabel DEBUG] Kept WAV copy at {:?}", debug_path);
         let _ = std::fs::remove_file(&temp_path);
 
-        // Clean up text
         let cleaned = cleanup_text(&raw_text);
-
-        // Auto-paste
         if !cleaned.is_empty() {
             paste_text(&cleaned)?;
         }
 
-        // Reset state
         {
             let mut state = self.state.lock().unwrap();
             *state = RecordingState::Ready;

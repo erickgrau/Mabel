@@ -434,7 +434,55 @@ select:focus, input:focus { outline: 2px solid var(--salmon); outline-offset: -1
 }
 .seg-btn.active { background: var(--text); color: white; }
 
+.switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  background: var(--border);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.18s;
+}
+.switch[aria-checked="true"] { background: var(--text); }
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.18s;
+}
+.switch[aria-checked="true"] .switch-thumb { transform: translateX(16px); }
+
 .model-row { display: flex; gap: 8px; align-items: center; }
+.key-row { display: flex; gap: 8px; align-items: center; }
+.key-status {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(91, 174, 123, 0.15);
+  color: var(--green);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.key-status.flash {
+  animation: status-flash 1.2s ease-out;
+}
+@keyframes status-flash {
+  0% { transform: scale(1); }
+  20% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
 
 #download-progress { padding: 0 0 14px; }
 #progress-bar {

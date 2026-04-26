@@ -237,6 +237,15 @@
                   <button type="button" id="engine-cloud" class="seg-btn">Groq cloud</button>
                 </div>
               </div>
+              <div class="row">
+                <div class="row-text">
+                  <div class="row-label">Live dictation</div>
+                  <div class="row-hint">Transcribe and paste in chunks as you speak, instead of all at once when you stop.</div>
+                </div>
+                <button type="button" id="streaming-toggle" class="switch" role="switch" aria-checked="true" aria-label="Live dictation">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
               <div class="row" id="local-settings">
                 <div class="row-text">
                   <div class="row-label">Whisper model</div>
@@ -255,10 +264,13 @@
               </div>
               <div class="row hidden" id="cloud-settings">
                 <div class="row-text">
-                  <div class="row-label">Groq API key</div>
+                  <div class="row-label">Groq API key <span class="key-status hidden" id="key-status">Saved</span></div>
                   <div class="row-hint">Stored in macOS Keychain. Get a key at console.groq.com.</div>
                 </div>
-                <input type="password" id="groq-key" placeholder="gsk_..." />
+                <div class="key-row">
+                  <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
+                  <button type="button" id="key-save" class="btn-secondary">Save</button>
+                </div>
               </div>
             </div>
           </div>

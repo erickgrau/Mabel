@@ -27,3 +27,8 @@ dirs = "6"
 arboard = "3"
 futures-util = "0.3"
 keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder"] }
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
