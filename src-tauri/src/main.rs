@@ -58,6 +58,26 @@ fn set_show_in_dock(app: tauri::AppHandle, show: bool) {
     system_ui::set_dock_visibility(&app, show);
 }
 
+#[tauri::command]
+fn check_accessibility() -> bool {
+    system_ui::is_accessibility_trusted(false)
+}
+
+/// Triggers macOS's Accessibility-required system dialog if not yet granted.
+/// Returns whether trust was already in place. The dialog has an "Open System
+/// Settings" button that takes the user to the right pane with Mabel
+/// pre-listed.
+#[tauri::command]
+fn request_accessibility() -> bool {
+    let already_trusted = system_ui::is_accessibility_trusted(false);
+    if !already_trusted {
+        // Trigger the prompt and also open settings as a belt-and-suspenders.
+        system_ui::is_accessibility_trusted(true);
+        system_ui::open_accessibility_settings();
+    }
+    already_trusted
+}
+
 fn get_app_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -286,6 +306,8 @@ fn main() {
             get_stats,
             set_launch_at_login,
             set_show_in_dock,
+            check_accessibility,
+            request_accessibility,
         ])
         .setup(move |app| {
             // Create the overlay window (small mic icon, top-right, always on top)

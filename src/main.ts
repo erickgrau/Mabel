@@ -543,3 +543,22 @@ loadSettings();
 loadVersion();
 loadStats();
 maybeRunFirstTimeSetup();
+
+// Check Accessibility permission on launch. If not granted, fire the system
+// dialog and also open the Privacy pane. Re-checks every 3s so the UI updates
+// once the user toggles it on.
+async function ensureAccessibility() {
+  try {
+    const trusted = await invoke<boolean>("check_accessibility");
+    if (!trusted) {
+      await invoke("request_accessibility");
+      const interval = setInterval(async () => {
+        const ok = await invoke<boolean>("check_accessibility");
+        if (ok) clearInterval(interval);
+      }, 3000);
+    }
+  } catch (e) {
+    console.error("accessibility check failed:", e);
+  }
+}
+ensureAccessibility();
