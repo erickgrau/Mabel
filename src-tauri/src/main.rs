@@ -280,9 +280,17 @@ fn main() {
     let initial_show_in_dock = settings.show_in_dock;
 
     tauri::Builder::default()
-        // Single-instance plugin temporarily disabled while we debug a startup
-        // crash. Re-enable once the cause is isolated. Until then, the user
-        // should avoid double-launching Mabel manually.
+        // Single-instance MUST be the first plugin registered. When a second
+        // copy launches (e.g. user double-clicks the dock icon while the
+        // LaunchAgent already has Mabel running, or a dev build starts on top
+        // of the installed one) it exits immediately and the original instance
+        // gets the callback. Two instances would otherwise fight over the
+        // global hotkey and the shared config dir, which silently breaks paste.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(overlay) = app.get_webview_window("overlay") {
+                let _ = overlay.show();
+            }
+        }))
         .plugin(tauri_nspanel::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
