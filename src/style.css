@@ -592,6 +592,25 @@ select:focus, input:focus { outline: 2px solid var(--salmon); outline-offset: -1
   gap: 10px;
   margin-bottom: 18px;
 }
+.whatsnew-h {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 14px 0 6px;
+}
+.whatsnew-h:first-child { margin-top: 0; }
+.whatsnew-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.whatsnew-list li {
+  color: var(--text-mute);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
 #firstrun-bar {
   flex: 1;
   height: 8px;

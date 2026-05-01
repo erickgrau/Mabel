@@ -29,3 +29,7 @@ target/
 # App-specific
 src-tauri/binaries/
 whisper.cpp/
+
+# Local experiments + reference patches not for shipping
+swift-fm/
+src-tauri/v1.patch

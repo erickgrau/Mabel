@@ -17,7 +17,9 @@ use mabel_lib::transcribe_local;
 
 struct AppState {
     recorder: Recorder,
-    settings: Mutex<Settings>,
+    // Wrapped in Arc so background tasks (the companion scheduler) can hold a
+    // shared reference and read the latest settings on each tick.
+    settings: Arc<Mutex<Settings>>,
     app_dir: PathBuf,
     stats: Arc<StatsStore>,
     llm_server: Arc<LlmServer>,
@@ -29,6 +31,52 @@ struct VersionInfo {
     #[serde(rename = "gitHash")]
     git_hash: &'static str,
     dirty: bool,
+}
+
+/// docs/whatsnew.md is bundled into the binary at compile time so the popup
+/// never depends on the file being present at runtime. Updated each release
+/// (rule lives in Claude memory `feedback_release_changelog.md`).
+const WHATSNEW_MD: &str = include_str!("../../docs/whatsnew.md");
+
+#[derive(serde::Serialize)]
+struct WhatsNewEntry {
+    version: String,
+    body: String,
+}
+
+/// Returns the changelog entry for the running version, if one exists.
+/// Frontend uses this to populate the "What's New" popup that fires on the
+/// first launch after an update.
+#[tauri::command]
+fn get_whats_new() -> Option<WhatsNewEntry> {
+    let target_header = format!("## v{}", mabel_lib::MABEL_VERSION);
+    let mut lines = WHATSNEW_MD.lines();
+    while let Some(line) = lines.next() {
+        if line.trim_start().starts_with(&target_header) {
+            // Capture from the line after the header until the next "## v"
+            // header or end of file.
+            let mut body = String::new();
+            for next in &mut lines {
+                if next.trim_start().starts_with("## v") {
+                    break;
+                }
+                body.push_str(next);
+                body.push('\n');
+            }
+            return Some(WhatsNewEntry {
+                version: mabel_lib::MABEL_VERSION.to_string(),
+                body: body.trim().to_string(),
+            });
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn mark_version_seen(state: State<AppState>) -> Result<(), String> {
+    let mut held = state.settings.lock().unwrap();
+    held.last_seen_version = mabel_lib::MABEL_VERSION.to_string();
+    held.save(&state.app_dir)
 }
 
 #[tauri::command]
@@ -95,23 +143,36 @@ fn get_app_dir() -> PathBuf {
 
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Settings {
-    let mut s = state.settings.lock().unwrap().clone();
-    // Reconcile against the keychain: a previous install may have stored a Groq
-    // key, then the config.json got deleted (or the user is on a fresh install
-    // of a new version). The key is still in the keychain — surface it so the
-    // UI shows "Saved" instead of asking for the key again.
-    //
-    // This call may trigger the macOS keychain access prompt the first time
-    // after install. That's the right moment for it: the user is in Settings,
-    // expects keychain interaction, and grants once-and-forever per signature.
-    if !s.groq_key_configured && mabel_lib::secrets::has_groq_key() {
-        s.groq_key_configured = true;
-        // Persist the corrected flag so subsequent loads don't re-probe.
+    // Cheap and read-only — no keychain access, no disk writes. This command
+    // gets called on every recording state poll, so any side effect here will
+    // flap the user (e.g. dev builds re-prompt the keychain because their
+    // signature changes per rebuild). The keychain reconciliation lives in
+    // `reconcile_groq_keychain` instead, called only when the Settings pane
+    // opens.
+    state.settings.lock().unwrap().clone()
+}
+
+/// One-shot probe of the macOS keychain for a stored Groq key. If found and not
+/// already reflected in the on-disk settings, flip the configured flag and
+/// persist. Called only when the Settings panel opens, so the keychain prompt
+/// happens at a moment the user expects (not on every dictation).
+#[tauri::command]
+fn reconcile_groq_keychain(state: State<AppState>) -> bool {
+    let already = {
+        let s = state.settings.lock().unwrap();
+        s.groq_key_configured
+    };
+    if already {
+        return true;
+    }
+    if mabel_lib::secrets::has_groq_key() {
         let mut held = state.settings.lock().unwrap();
         held.groq_key_configured = true;
         let _ = held.save(&state.app_dir);
+        true
+    } else {
+        false
     }
-    s
 }
 
 #[tauri::command]
@@ -169,6 +230,23 @@ async fn download_llm_model(
     let name = mabel_lib::llm::model_filename(&model)?;
     let dest = state.app_dir.join(&name);
     downloader::download_model(app, &url, &dest).await
+}
+
+/// Toggle one companion visit. If a visit is currently in flight, cancel it
+/// (cat parks off-screen). Otherwise start a new one. Used by the Settings
+/// "Show now" button so repeat clicks don't stack visits.
+#[tauri::command]
+async fn companion_visit_now(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if mabel_lib::companion::is_visiting() {
+        mabel_lib::companion::cancel_visit();
+        return Ok(());
+    }
+    let snapshot = state.settings.lock().unwrap().clone();
+    mabel_lib::companion::run_visit(&app, &snapshot).await;
+    Ok(())
 }
 
 /// Starts (or confirms running) the llama-server with the configured LLM model.
@@ -342,9 +420,11 @@ fn main() {
     let stats = Arc::new(StatsStore::load(&app_dir));
     let recorder = Recorder::new(stats.clone());
     let llm_server = Arc::new(LlmServer::new());
+    let settings_handle = Arc::new(Mutex::new(settings.clone()));
     let initial_show_in_dock = settings.show_in_dock;
     let initial_cleanup_mode = settings.cleanup_mode.clone();
     let initial_llm_model = settings.llm_model.clone();
+    let initial_companion_enabled = settings.companion_enabled;
 
     tauri::Builder::default()
         // Single-instance MUST be the first plugin registered. When a second
@@ -364,7 +444,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             recorder,
-            settings: Mutex::new(settings),
+            settings: settings_handle.clone(),
             app_dir: app_dir.clone(),
             stats,
             llm_server: llm_server.clone(),
@@ -388,6 +468,10 @@ fn main() {
             check_llm_model_downloaded,
             download_llm_model,
             ensure_llm_started,
+            companion_visit_now,
+            reconcile_groq_keychain,
+            get_whats_new,
+            mark_version_seen,
         ])
         .setup(move |app| {
             // Create the overlay window (small mic icon, top-right, always on top)
@@ -419,6 +503,41 @@ fn main() {
             .focused(false)
             .shadow(false)
             .build();
+
+            // Create the companion (animated cat) window. Plain transparent
+            // always-on-top NSWindow — deliberately NOT converted to NSPanel
+            // (the overlay does that for floating-across-Spaces behavior, but
+            // for the companion we need a regular window that reliably shows
+            // and hides on demand). Starts visible at the builder layer; we
+            // immediately hide it in code so it doesn't flash.
+            // Companion window. Never hidden — we just park it off-screen when
+            // not in a visit. macOS's hide/show dance on transparent windows is
+            // flaky (show after hide doesn't always re-render), so we sidestep
+            // it entirely by teleporting the window in and out of visible
+            // bounds. 1px off the visible region is enough.
+            let companion = WebviewWindowBuilder::new(
+                app,
+                "companion",
+                WebviewUrl::App("src/companion.html".into()),
+            )
+            .title("")
+            .inner_size(265.0, 265.0)
+            .position(-9999.0, -9999.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .shadow(false)
+            .build();
+            match companion {
+                Ok(cw) => {
+                    let _ = cw.show();
+                    println!("[Mabel] Companion window created (parked off-screen)");
+                }
+                Err(e) => eprintln!("[Mabel] Failed to create companion window: {}", e),
+            }
 
             match overlay {
                 Ok(w) => {
@@ -473,6 +592,13 @@ fn main() {
                     }
                 }
             }
+
+            // Spawn the desktop companion scheduler. The loop runs forever and
+            // re-reads settings each tick, so toggling the feature on/off in the
+            // UI takes effect on the next interval. We always spawn — the
+            // scheduler itself respects companion_enabled.
+            let _ = initial_companion_enabled; // kept for symmetry / future use
+            mabel_lib::companion::spawn_scheduler(handle.clone(), settings_handle.clone());
 
             Ok(())
         })

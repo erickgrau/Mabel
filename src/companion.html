@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mabel</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+        background: transparent;
+        overflow: hidden;
+        -webkit-user-select: none;
+        cursor: default;
+      }
+      /*
+       * Sprite layout: one strip image, 8 frames in a horizontal row.
+       *  Frames 1–6 (indices 0–5): walk cycle.
+       *  Frame 7 (index 6): sit, eyes open.
+       *  Frame 8 (index 7): sit, eyes closed (blink).
+       *
+       * Approach: render the sprite as an <img> sized 800vw wide × 100vh tall
+       * inside a viewport-sized container with overflow:hidden. Each frame
+       * occupies exactly 100vw of the image. The sprite shifts left in 100vw
+       * steps to cycle through frames. Using transform:translateX with vw
+       * units is more reliable across WebKit than background-position math.
+       */
+      #stage {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        transform-origin: center center;
+        will-change: transform;
+      }
+      #stage.facing-left { transform: scaleX(-1); }
+      #sprite {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 800vw;
+        height: 100vh;
+        animation: walk 1s steps(6) infinite;
+        will-change: transform;
+        image-rendering: -webkit-optimize-contrast;
+      }
+      @keyframes walk {
+        from { transform: translateX(0); }
+        to   { transform: translateX(-600vw); }
+      }
+      #sprite.sitting {
+        animation: none;
+        transform: translateX(-600vw);
+      }
+      #sprite.blinking {
+        animation: none;
+        transform: translateX(-700vw);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <img id="sprite" src="/mabel_walk.png" alt="" draggable="false" />
+    </div>
+    <script>
+      const stage = document.getElementById('stage');
+      const sprite = document.getElementById('sprite');
+      const tauri = window.__TAURI__;
+      console.log('[companion] script loaded, tauri available:', !!tauri);
+      if (tauri && tauri.event) {
+        tauri.event.listen('mabel-companion-state', (e) => {
+          const { facing, sitting, blink } = e.payload || {};
+          console.log('[companion] state event', e.payload);
+          // Apply mirror via inline style so no CSS class race or specificity
+          // issue can prevent the flip from taking effect.
+          stage.style.transform = (facing === 'left') ? 'scaleX(-1)' : 'scaleX(1)';
+          sprite.classList.toggle('sitting', !!sitting && !blink);
+          if (blink) {
+            sprite.classList.add('blinking');
+            sprite.classList.remove('sitting');
+            setTimeout(() => {
+              sprite.classList.remove('blinking');
+              if (sitting) sprite.classList.add('sitting');
+            }, 180);
+          } else if (!sitting) {
+            sprite.classList.remove('blinking');
+          }
+        }).then(() => console.log('[companion] listening for state events'));
+      } else {
+        console.error('[companion] Tauri event API not available');
+      }
+    </script>
+  </body>
+</html>

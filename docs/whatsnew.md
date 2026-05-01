@@ -2,6 +2,17 @@
 
 The in-app first-launch popup (F10, not yet built) reads from this file. Every Mabel release MUST add an entry here. Newest version on top.
 
+## v1.1.1 (2026-05-01)
+
+### New
+- Mabel can now walk across your desktop. Optional, off by default. Settings → System → "Mabel on your desktop". Pick how big she is, how often she visits, and how long each visit lasts.
+- Multilingual transcription. Mabel auto-detects the language you're speaking and transcribes in the source language. Works for 100+ languages.
+- This "What's New" popup. From now on, every Mabel update will show you what changed on first launch.
+
+### Fixed
+- Default hotkey changed from Cmd+Shift+Space to Cmd+D (the old default conflicted with several other apps).
+- Groq API key no longer prompts for keychain access on every dictation. The key is cached in memory after the first read.
+
 ## v1.1.0 (2026-05-01)
 
 ### Fixed

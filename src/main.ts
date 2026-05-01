@@ -18,6 +18,11 @@ interface Settings {
   pressEnterCommand: boolean;
   cleanupMode: string;
   llmModel: string;
+  companionEnabled: boolean;
+  companionSize: string;
+  companionFrequency: string;
+  companionVisit: string;
+  lastSeenVersion: string;
 }
 
 interface VersionInfo {
@@ -94,7 +99,23 @@ document.querySelectorAll<HTMLElement>(".nav-item").forEach((item) => {
 
 // Settings modal open/close
 const modal = $("settings-modal");
-$("open-settings").addEventListener("click", () => modal.classList.remove("hidden"));
+$("open-settings").addEventListener("click", () => {
+  modal.classList.remove("hidden");
+  // Reconcile the keychain status only when Settings opens, not on every
+  // recording-state poll. On dev builds, has_groq_key() prompts for keychain
+  // access (signature changes per rebuild), so we want this fired only at a
+  // moment the user expects keychain interaction.
+  invoke<boolean>("reconcile_groq_keychain")
+    .then((found) => {
+      if (found && !currentSettings.groqKeyConfigured) {
+        currentSettings.groqKeyConfigured = true;
+        groqKey.placeholder = "•••••••••••••••• (stored)";
+        keyStatus.textContent = "Saved";
+        keyStatus.classList.remove("hidden");
+      }
+    })
+    .catch((e) => console.error("reconcile_groq_keychain:", e));
+});
 $("close-settings").addEventListener("click", () => modal.classList.add("hidden"));
 modal.querySelector(".modal-backdrop")?.addEventListener("click", () => modal.classList.add("hidden"));
 document.addEventListener("keydown", (e) => {
@@ -176,6 +197,11 @@ async function loadSettings() {
   streamingToggle.setAttribute("aria-checked", String(currentSettings.streaming));
   setSwitch(autostartToggle, currentSettings.launchAtLogin);
   setSwitch(dockToggle, currentSettings.showInDock);
+  setSwitch(companionToggle, currentSettings.companionEnabled);
+  companionSizeSelect.value = currentSettings.companionSize || "medium";
+  companionFrequencySelect.value = currentSettings.companionFrequency || "30min";
+  companionVisitSelect.value = currentSettings.companionVisit || "medium";
+  applyCompanionUi();
   setSwitch(soundsToggle, currentSettings.dictationSounds);
   setSwitch(pressEnterToggle, currentSettings.pressEnterCommand);
 
@@ -284,6 +310,9 @@ async function saveSettings() {
   currentSettings.whisperModel = modelSelect.value;
   currentSettings.cleanupMode = cleanupModeSelect.value;
   currentSettings.llmModel = llmModelSelect.value;
+  currentSettings.companionSize = companionSizeSelect.value;
+  currentSettings.companionFrequency = companionFrequencySelect.value;
+  currentSettings.companionVisit = companionVisitSelect.value;
   const previousKey = currentSettings.groqApiKey;
   currentSettings.groqApiKey = "";
   await invoke("save_settings", { settings: currentSettings });
@@ -379,6 +408,22 @@ const autostartToggle = $<HTMLButtonElement>("autostart-toggle");
 const dockToggle = $<HTMLButtonElement>("dock-toggle");
 const soundsToggle = $<HTMLButtonElement>("sounds-toggle");
 const pressEnterToggle = $<HTMLButtonElement>("press-enter-toggle");
+const companionToggle = $<HTMLButtonElement>("companion-toggle");
+const companionSettings = $("companion-settings");
+const companionFrequencyRow = $("companion-frequency-row");
+const companionVisitRow = $("companion-visit-row");
+const companionTestRow = $("companion-test-row");
+const companionSizeSelect = $<HTMLSelectElement>("companion-size-select");
+const companionFrequencySelect = $<HTMLSelectElement>("companion-frequency-select");
+const companionVisitSelect = $<HTMLSelectElement>("companion-visit-select");
+const companionTestBtn = $<HTMLButtonElement>("companion-test-btn");
+
+function applyCompanionUi() {
+  const on = companionToggle.getAttribute("aria-checked") === "true";
+  for (const row of [companionSettings, companionFrequencyRow, companionVisitRow, companionTestRow]) {
+    row.classList.toggle("hidden", !on);
+  }
+}
 
 function setSwitch(btn: HTMLButtonElement, on: boolean) {
   btn.setAttribute("aria-checked", String(on));
@@ -422,6 +467,27 @@ pressEnterToggle.addEventListener("click", () => {
   setSwitch(pressEnterToggle, next);
   currentSettings.pressEnterCommand = next;
   saveSettings();
+});
+
+companionToggle.addEventListener("click", () => {
+  const next = companionToggle.getAttribute("aria-checked") !== "true";
+  setSwitch(companionToggle, next);
+  currentSettings.companionEnabled = next;
+  applyCompanionUi();
+  saveSettings();
+});
+
+for (const sel of [companionSizeSelect, companionFrequencySelect, companionVisitSelect]) {
+  sel.addEventListener("change", () => {
+    currentSettings.companionSize = companionSizeSelect.value;
+    currentSettings.companionFrequency = companionFrequencySelect.value;
+    currentSettings.companionVisit = companionVisitSelect.value;
+    saveSettings();
+  });
+}
+
+companionTestBtn.addEventListener("click", () => {
+  invoke("companion_visit_now").catch((e) => console.error("companion test:", e));
 });
 
 function formatHotkey(accelerator: string): string {
@@ -629,3 +695,77 @@ async function ensureAccessibility() {
   }
 }
 ensureAccessibility();
+
+// What's New popup. On first launch after an update (or first launch ever
+// after the user has finished the initial Whisper download), if the bundled
+// changelog has an entry for the running version, pop a modal showing what
+// changed. Marks the version as seen on dismiss so we don't re-show it.
+async function maybeShowWhatsNew() {
+  try {
+    const settings = await invoke<Settings>("get_settings");
+    const ver = await invoke<VersionInfo>("get_version");
+    if (settings.lastSeenVersion === ver.version) return;
+    // Don't pop on the very first install before they've used the app at all.
+    // The first-run download modal handles that surface; popping What's New on
+    // top of it would be noisy. We detect "first launch ever" as no
+    // lastSeenVersion AND no Whisper model on disk.
+    if (!settings.lastSeenVersion) {
+      const small = await invoke<boolean>("check_model_downloaded", { modelSize: "small" });
+      const medium = await invoke<boolean>("check_model_downloaded", { modelSize: "medium" });
+      if (!small && !medium) return;
+    }
+    const entry = await invoke<{ version: string; body: string } | null>("get_whats_new");
+    if (!entry) {
+      // No changelog entry for this version — still mark it seen so we don't
+      // try again next launch.
+      await invoke("mark_version_seen");
+      return;
+    }
+    const modal = document.getElementById("whatsnew-modal")!;
+    const verEl = document.getElementById("whatsnew-version")!;
+    const bodyEl = document.getElementById("whatsnew-body")!;
+    verEl.textContent = "v" + entry.version;
+    bodyEl.innerHTML = renderChangelog(entry.body);
+    modal.classList.remove("hidden");
+    const dismiss = async () => {
+      modal.classList.add("hidden");
+      await invoke("mark_version_seen");
+    };
+    document.getElementById("whatsnew-done")!.addEventListener("click", dismiss, { once: true });
+    document.getElementById("whatsnew-backdrop")!.addEventListener("click", dismiss, { once: true });
+  } catch (e) {
+    console.error("whats-new check failed:", e);
+  }
+}
+
+// Tiny changelog renderer: handles ### subheaders and bullet lists, escapes
+// everything else. Keeps the popup safe against accidental HTML in the
+// changelog source.
+function renderChangelog(md: string): string {
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lines = md.split("\n");
+  const html: string[] = [];
+  let inList = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      if (inList) { html.push("</ul>"); inList = false; }
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      if (inList) { html.push("</ul>"); inList = false; }
+      html.push(`<h3 class="whatsnew-h">${escape(line.slice(4))}</h3>`);
+    } else if (line.startsWith("- ")) {
+      if (!inList) { html.push("<ul class=\"whatsnew-list\">"); inList = true; }
+      html.push(`<li>${escape(line.slice(2))}</li>`);
+    } else {
+      if (inList) { html.push("</ul>"); inList = false; }
+      html.push(`<p>${escape(line)}</p>`);
+    }
+  }
+  if (inList) html.push("</ul>");
+  return html.join("");
+}
+
+maybeShowWhatsNew();

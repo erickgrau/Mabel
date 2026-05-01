@@ -126,6 +126,12 @@ Whisper supports it natively, just need to expose. Both competitors highlight 10
 ### F7. Agent mode (Glaido Pro beta)
 Voice commands that do things instead of typing: "summarize the selected text", "rewrite this more concisely", "translate to Spanish". Selection comes from accessibility API, result pasted back. This is differentiated territory worth exploring once F1 lands.
 
+### F12. Multilingual transcription
+Whisper supports 100+ languages and transcribes in the source language. Currently `transcribe_local.rs` hardcodes `-l en`. Two changes: flip default to `auto`, add a Settings dropdown for users who want to lock to a specific language (auto-detect is occasionally wrong on short utterances). Trivial in v1.1.1.
+
+### F11. Custom icon on the .dmg file itself
+The mounted volume already shows Mabel's icon (Tauri sets `--volicon` correctly). What's still generic is the .dmg file icon Finder shows before mounting. Set it via PyObjC `NSWorkspace.setIcon_forFile_options_` between `tauri build` and `notarytool submit`, since adding icon resources after notarization invalidates the staple. Add to release flow.
+
 ### F10. "What's New" popup on first launch after update
 Every time the user updates Mabel, the first launch should pop a modal that shows the new version, new features, and bug fixes. Same pattern as Slack/Linear/etc.
 
@@ -137,6 +143,12 @@ Every time the user updates Mabel, the first launch should pop a modal that show
 - First-ever install: skip the popup (last_seen_version was just set during first-run flow).
 
 **Release process change:** every version bump MUST add an entry to the changelog source file. This is now a hard rule (see Claude memory `feedback_release_changelog.md`). Until F10 ships, treat the file as forward-compat: write entries now so they're ready when the popup ships.
+
+### F9.1. Companion polish — sit-and-stare, follow-mouse, smoother walk
+Once the basic companion (F9) is shipping, add:
+- **Sit-and-stare:** when she stops mid-walk, swap to a forward-facing sit pose (looking at the camera/user). Currently the sit pose is side-profile. Need a new sprite frame: front-facing seated cat, eyes open. Add another for blink (front-facing eyes closed).
+- **Follow-mouse mode (separate setting):** instead of scheduled walk-bys, she sits on the desktop and her gaze tracks the cursor. Implement as a small idle window that picks one of N forward-facing eye-position frames based on mouse position. Settings option: "Companion mode = Roams / Watches".
+- **Smoother walk:** current 6-frame walk cycle at 1s feels choppy. Either get more frames (12+ for fluid motion) or interpolate between frames with subtle easing. Easier path: just commission more frames from ChatGPT with the prompt "extend this 6-frame walk cycle to 12 frames by inserting an in-between frame between each existing pair, keeping pose progression smooth."
 
 ### F9. Animated desktop companion ("Mabel-cat-on-desktop")
 Idea: animate the Mabel cat character as a desktop companion that occasionally walks around, idles, blinks, sits. Pure brand/delight play. Native macOS path: NSWindow with transparent background hosting a sprite-sheet PNG cycle, Core Animation timing. Out of scope for v1.1 (cleanup focus); revisit after Pro features ship.

@@ -36,12 +36,33 @@ pub struct Settings {
     /// "light" or "standard" — only consulted when cleanup_mode == "llm".
     #[serde(rename = "llmModel", default = "default_llm_model")]
     pub llm_model: String,
+    /// Desktop companion (animated cat) toggle. Default off so we don't surprise
+    /// users on update.
+    #[serde(rename = "companionEnabled", default)]
+    pub companion_enabled: bool,
+    /// "small" | "medium" | "large" — fraction of screen height for the cat.
+    #[serde(rename = "companionSize", default = "default_companion_size")]
+    pub companion_size: String,
+    /// "15min" | "30min" | "1hr" | "2hr" — how often the cat appears.
+    #[serde(rename = "companionFrequency", default = "default_companion_frequency")]
+    pub companion_frequency: String,
+    /// "short" | "medium" | "long" — how long each visit lasts.
+    #[serde(rename = "companionVisit", default = "default_companion_visit")]
+    pub companion_visit: String,
+    /// Last Mabel version the user actually saw the "What's New" popup for.
+    /// On launch we compare this to the running version — if they differ, show
+    /// the popup with the changelog entries between them, then update this.
+    #[serde(rename = "lastSeenVersion", default)]
+    pub last_seen_version: String,
 }
 
 fn default_streaming() -> bool { true }
 fn default_true() -> bool { true }
 fn default_cleanup_mode() -> String { "rules".to_string() }
 fn default_llm_model() -> String { "standard".to_string() }
+fn default_companion_size() -> String { "medium".to_string() }
+fn default_companion_frequency() -> String { "30min".to_string() }
+fn default_companion_visit() -> String { "medium".to_string() }
 
 /// What we actually serialize to disk. Excludes the Groq API key, which lives
 /// in the OS keychain. Keeps the same JSON shape the UI expects, minus the key.
@@ -70,6 +91,16 @@ struct DiskSettings {
     cleanup_mode: String,
     #[serde(rename = "llmModel", default = "default_llm_model")]
     llm_model: String,
+    #[serde(rename = "companionEnabled", default)]
+    companion_enabled: bool,
+    #[serde(rename = "companionSize", default = "default_companion_size")]
+    companion_size: String,
+    #[serde(rename = "companionFrequency", default = "default_companion_frequency")]
+    companion_frequency: String,
+    #[serde(rename = "companionVisit", default = "default_companion_visit")]
+    companion_visit: String,
+    #[serde(rename = "lastSeenVersion", default)]
+    last_seen_version: String,
 }
 
 impl From<&Settings> for DiskSettings {
@@ -88,6 +119,11 @@ impl From<&Settings> for DiskSettings {
             press_enter_command: s.press_enter_command,
             cleanup_mode: s.cleanup_mode.clone(),
             llm_model: s.llm_model.clone(),
+            companion_enabled: s.companion_enabled,
+            companion_size: s.companion_size.clone(),
+            companion_frequency: s.companion_frequency.clone(),
+            companion_visit: s.companion_visit.clone(),
+            last_seen_version: s.last_seen_version.clone(),
         }
     }
 }
@@ -100,7 +136,7 @@ impl Default for Settings {
             whisper_model: "small".to_string(),
             groq_api_key: String::new(),
             recording_mode: "toggle".to_string(),
-            hotkey: "CmdOrCtrl+Shift+Space".to_string(),
+            hotkey: "CmdOrCtrl+D".to_string(),
             streaming: true,
             groq_key_configured: false,
             launch_at_login: false,
@@ -109,6 +145,11 @@ impl Default for Settings {
             press_enter_command: false,
             cleanup_mode: default_cleanup_mode(),
             llm_model: default_llm_model(),
+            companion_enabled: false,
+            companion_size: default_companion_size(),
+            companion_frequency: default_companion_frequency(),
+            companion_visit: default_companion_visit(),
+            last_seen_version: String::new(),
         }
     }
 }
@@ -149,6 +190,11 @@ impl Settings {
                         press_enter_command: d.press_enter_command,
                         cleanup_mode: d.cleanup_mode,
                         llm_model: d.llm_model,
+                        companion_enabled: d.companion_enabled,
+                        companion_size: d.companion_size,
+                        companion_frequency: d.companion_frequency,
+                        companion_visit: d.companion_visit,
+                        last_seen_version: d.last_seen_version,
                     })
                     .unwrap_or_default();
 

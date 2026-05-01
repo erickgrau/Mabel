@@ -36,7 +36,7 @@ pub async fn transcribe_local(
             audio_path.to_str().unwrap(),
             "--no-timestamps",
             "-l",
-            "en",
+            "auto",
             // Default 0.6 threshold. Our VAD already drops silent chunks, so
             // anything that reaches Whisper should plausibly contain speech;
             // we don't need to be permissive here and risk hallucinations.

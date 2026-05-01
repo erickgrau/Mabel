@@ -250,8 +250,23 @@
 
           <div class="card help-card">
             <h2 class="help-h">The hotkey</h2>
-            <p>Default is <kbd>Cmd+Shift+D</kbd>. Change it in Settings &rarr; General by clicking the hotkey field and pressing your new combination. Press <kbd>Esc</kbd> to cancel.</p>
+            <p>Default is <kbd>Cmd+D</kbd>. Change it in Settings &rarr; General by clicking the hotkey field and pressing your new combination. Press <kbd>Esc</kbd> to cancel.</p>
             <p class="help-note"><b>Toggle</b> mode: press once to start, press again to stop and paste.<br/><b>Push to talk</b> mode: hold the hotkey while you speak, release to stop and paste.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">AI cleanup (optional)</h2>
+            <p>Settings &rarr; Engine &rarr; Cleanup. Switch from <b>Rules only</b> to <b>AI cleanup (local)</b> to download Gemma 4 E4B (~5&nbsp;GB, one-time) and run a local LLM pass after Whisper to remove filler words, fix punctuation, and normalize numbers and proper nouns. Runs fully on-device, never sends your audio or transcript anywhere. Adds about half a second per dictation once warmed up.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Multilingual</h2>
+            <p>Mabel auto-detects the language you're speaking. Whisper supports 100+ languages and transcribes in the source language (no auto-translation). If auto-detect picks the wrong language on a short utterance, just keep dictating &mdash; longer audio gives the detector more to work with.</p>
+          </div>
+
+          <div class="card help-card">
+            <h2 class="help-h">Mabel on your desktop (companion)</h2>
+            <p>Settings &rarr; System &rarr; <b>Mabel on your desktop</b>. Off by default. When on, Mabel walks across your screen now and then &mdash; she enters from one edge, pauses to sit and blink, then walks off. Adjust her size, how often she visits, and how long each visit lasts. Use <b>Show now</b> to preview, click again to dismiss mid-walk.</p>
           </div>
 
           <div class="card help-card">
@@ -275,7 +290,7 @@
             <ul class="help-list">
               <li><b>Microphone</b> &mdash; required to record. Grant when first prompted, or in System Settings &rarr; Privacy &amp; Security &rarr; Microphone.</li>
               <li><b>Accessibility</b> &mdash; required to paste at the cursor. Toggle Mabel on under System Settings &rarr; Privacy &amp; Security &rarr; Accessibility.</li>
-              <li><b>Automation (System Events)</b> &mdash; required for the paste mechanism. Click Allow when prompted.</li>
+              <li><b>Automation (System Events)</b> &mdash; required for the paste mechanism. Mabel asks for both Accessibility and Automation up front during the first-launch download, so you grant them once instead of being interrupted later.</li>
               <li><b>Keychain</b> &mdash; only if you save a Groq API key. Click Always Allow to avoid future prompts.</li>
             </ul>
           </div>
@@ -330,6 +345,16 @@
         <p class="firstrun-foot" id="firstrun-foot">You can switch to the Medium model later in <b>Settings → Engine</b> for better accuracy.</p>
         <button type="button" id="firstrun-done" class="btn-primary hidden">Get started</button>
         <button type="button" id="firstrun-retry" class="btn-secondary hidden">Retry download</button>
+      </div>
+    </div>
+
+    <div id="whatsnew-modal" class="modal hidden">
+      <div class="modal-backdrop" id="whatsnew-backdrop"></div>
+      <div class="firstrun-panel">
+        <div class="firstrun-eyebrow">What's new in Mabel</div>
+        <h2 class="firstrun-title" id="whatsnew-version">v—</h2>
+        <div class="firstrun-body" id="whatsnew-body"></div>
+        <button type="button" id="whatsnew-done" class="btn-primary">Got it</button>
       </div>
     </div>
 
@@ -524,6 +549,56 @@
                 <button type="button" id="press-enter-toggle" class="switch" role="switch" aria-checked="false" aria-label="Press Enter command">
                   <span class="switch-thumb"></span>
                 </button>
+              </div>
+              <div class="row">
+                <div class="row-text">
+                  <div class="row-label">Mabel on your desktop</div>
+                  <div class="row-hint">Mabel walks across your screen now and then. Off by default. Tweak how often, how big, and how long she sticks around below.</div>
+                </div>
+                <button type="button" id="companion-toggle" class="switch" role="switch" aria-checked="false" aria-label="Companion">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+              <div class="row hidden" id="companion-settings">
+                <div class="row-text">
+                  <div class="row-label">Companion size</div>
+                  <div class="row-hint">How large Mabel appears on your screen.</div>
+                </div>
+                <select id="companion-size-select" aria-label="Companion size">
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+              <div class="row hidden" id="companion-frequency-row">
+                <div class="row-text">
+                  <div class="row-label">How often</div>
+                  <div class="row-hint">How often Mabel visits your desktop.</div>
+                </div>
+                <select id="companion-frequency-select" aria-label="Companion frequency">
+                  <option value="15min">Every 15 minutes</option>
+                  <option value="30min">Every 30 minutes</option>
+                  <option value="1hr">Every hour</option>
+                  <option value="2hr">Every 2 hours</option>
+                </select>
+              </div>
+              <div class="row hidden" id="companion-visit-row">
+                <div class="row-text">
+                  <div class="row-label">Visit length</div>
+                  <div class="row-hint">How long Mabel sticks around each visit.</div>
+                </div>
+                <select id="companion-visit-select" aria-label="Companion visit length">
+                  <option value="short">Short</option>
+                  <option value="medium">Medium</option>
+                  <option value="long">Long</option>
+                </select>
+              </div>
+              <div class="row hidden" id="companion-test-row">
+                <div class="row-text">
+                  <div class="row-label">Show Mabel now</div>
+                  <div class="row-hint">Run a one-off visit so you can see what the settings produce.</div>
+                </div>
+                <button type="button" id="companion-test-btn" class="btn-secondary">Show now</button>
               </div>
             </div>
           </div>
