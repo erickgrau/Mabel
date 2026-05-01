@@ -126,8 +126,8 @@ Whisper supports it natively, just need to expose. Both competitors highlight 10
 ### F7. Agent mode (Glaido Pro beta)
 Voice commands that do things instead of typing: "summarize the selected text", "rewrite this more concisely", "translate to Spanish". Selection comes from accessibility API, result pasted back. This is differentiated territory worth exploring once F1 lands.
 
-### F12. Multilingual transcription
-Whisper supports 100+ languages and transcribes in the source language. Currently `transcribe_local.rs` hardcodes `-l en`. Two changes: flip default to `auto`, add a Settings dropdown for users who want to lock to a specific language (auto-detect is occasionally wrong on short utterances). Trivial in v1.1.1.
+### F12. Multilingual transcription — REOPENED for v1.1.2
+v1.1.1 flipped the default to `-l auto` and broke English on short utterances (Whisper auto-detect picks the wrong language from brief samples and produces garbage). Reverted default to `en` in the v1.1.2 dev branch. Right answer: add a Settings dropdown for language with English default, an Auto option for the multilingual users, and explicit per-language locks for everyone in between. Until the dropdown ships, English-only.
 
 ### F11. Custom icon on the .dmg file itself
 The mounted volume already shows Mabel's icon (Tauri sets `--volicon` correctly). What's still generic is the .dmg file icon Finder shows before mounting. Set it via PyObjC `NSWorkspace.setIcon_forFile_options_` between `tauri build` and `notarytool submit`, since adding icon resources after notarization invalidates the staple. Add to release flow.

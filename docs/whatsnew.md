@@ -2,6 +2,12 @@
 
 The in-app first-launch popup (F10, not yet built) reads from this file. Every Mabel release MUST add an entry here. Newest version on top.
 
+## v1.1.2 (2026-05-01)
+
+### Fixed
+- English transcription accuracy. v1.1.1 enabled Whisper auto-detect for multilingual support, but auto-detect picks the wrong language on short utterances and produces garbage that looks English-ish but isn't what you said. Reverted to English-only by default. A proper language picker is coming in the next release.
+- "What's New" popup can no longer be dismissed by an accidental backdrop click before you've actually read it. Only the "Got it" button dismisses now.
+
 ## v1.1.1 (2026-05-01)
 
 ### New

@@ -731,8 +731,11 @@ async function maybeShowWhatsNew() {
       modal.classList.add("hidden");
       await invoke("mark_version_seen");
     };
+    // Only the "Got it" button dismisses. Deliberately NOT wiring backdrop
+    // clicks — early on we saw lastSeenVersion get set without the user ever
+    // seeing the popup, which a stray backdrop event would explain. The user
+    // has to actively acknowledge the changes.
     document.getElementById("whatsnew-done")!.addEventListener("click", dismiss, { once: true });
-    document.getElementById("whatsnew-backdrop")!.addEventListener("click", dismiss, { once: true });
   } catch (e) {
     console.error("whats-new check failed:", e);
   }

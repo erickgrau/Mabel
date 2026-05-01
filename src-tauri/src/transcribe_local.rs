@@ -35,8 +35,13 @@ pub async fn transcribe_local(
             "-f",
             audio_path.to_str().unwrap(),
             "--no-timestamps",
+            // Default to English. Auto-detect (-l auto) breaks accuracy on
+            // short utterances because Whisper occasionally picks the wrong
+            // language from a brief sample and forces English-sounding garbage.
+            // F12 follow-up: make this a Settings dropdown so users who want
+            // multilingual can opt in.
             "-l",
-            "auto",
+            "en",
             // Default 0.6 threshold. Our VAD already drops silent chunks, so
             // anything that reaches Whisper should plausibly contain speech;
             // we don't need to be permissive here and risk hallucinations.
