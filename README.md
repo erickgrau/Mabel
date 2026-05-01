@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/mabel-banner.jpg" alt="Mabel" width="100%" />
+</p>
+
 # Mabel
 
 Privacy-first dictation for macOS. Hold a hotkey, speak, release. Mabel transcribes your voice and pastes the text wherever your cursor is. Audio never leaves your Mac unless you explicitly opt in to a cloud engine with your own API key.
