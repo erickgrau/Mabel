@@ -180,10 +180,25 @@ async fn transcribe_and_paste(
 
     match raw {
         Ok(text) => {
-            let cleaned = cleanup_text(&text);
-            if cleaned.is_empty() {
+            let rule_cleaned = cleanup_text(&text);
+            if rule_cleaned.is_empty() {
                 return;
             }
+            // LLM cleanup only on the final chunk in streaming mode. Per-chunk
+            // LLM passes would add 300-500ms to every paste and break the
+            // "live transcription" feel.
+            let cleaned = if is_final && settings.cleanup_mode == "llm" {
+                match crate::llm::cleanup_with_llm(&rule_cleaned).await {
+                    Ok(s) if !s.is_empty() => s,
+                    Ok(_) => rule_cleaned,
+                    Err(e) => {
+                        eprintln!("[Mabel] LLM cleanup failed, using rules: {}", e);
+                        rule_cleaned
+                    }
+                }
+            } else {
+                rule_cleaned
+            };
             // Only the final chunk can carry a "press enter" command — otherwise
             // we'd fire Return mid-sentence.
             let (to_paste, press_enter) = if is_final {

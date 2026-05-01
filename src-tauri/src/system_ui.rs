@@ -74,6 +74,29 @@ pub fn is_accessibility_trusted(prompt: bool) -> bool {
 #[cfg(not(target_os = "macos"))]
 pub fn is_accessibility_trusted(_prompt: bool) -> bool { true }
 
+/// Fires a no-op AppleScript against System Events so macOS shows the
+/// "Mabel wants to send Apple events to System Events" permission prompt.
+/// Without this, the prompt only appears the first time we try to paste
+/// (Cmd+V via System Events keystroke), which is too late — by then the user
+/// has already lost a dictation. We call this during first-run setup so the
+/// prompt appears alongside the Accessibility one, before the user dictates.
+///
+/// Does not block on the prompt: macOS shows it asynchronously. If the user
+/// denies, paste will still fail later with a permission error.
+pub fn prime_apple_events_permission() {
+    let _ = std::process::Command::new("osascript")
+        .args(["-e", r#"tell application "System Events" to return true"#])
+        .spawn();
+}
+
+/// Open System Settings to the Automation privacy pane (where AppleEvents
+/// permissions are listed). Useful as a follow-up if the user denied the prompt.
+pub fn open_automation_settings() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
+        .spawn();
+}
+
 /// Open System Settings to the Accessibility privacy pane.
 pub fn open_accessibility_settings() {
     let _ = std::process::Command::new("open")

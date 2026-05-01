@@ -29,10 +29,19 @@ pub struct Settings {
     pub dictation_sounds: bool,
     #[serde(rename = "pressEnterCommand", default)]
     pub press_enter_command: bool,
+    /// "rules" (default) keeps the existing rule-based pass only.
+    /// "llm" runs the rule pass first then a local LLM cleanup pass.
+    #[serde(rename = "cleanupMode", default = "default_cleanup_mode")]
+    pub cleanup_mode: String,
+    /// "light" or "standard" — only consulted when cleanup_mode == "llm".
+    #[serde(rename = "llmModel", default = "default_llm_model")]
+    pub llm_model: String,
 }
 
 fn default_streaming() -> bool { true }
 fn default_true() -> bool { true }
+fn default_cleanup_mode() -> String { "rules".to_string() }
+fn default_llm_model() -> String { "standard".to_string() }
 
 /// What we actually serialize to disk. Excludes the Groq API key, which lives
 /// in the OS keychain. Keeps the same JSON shape the UI expects, minus the key.
@@ -57,6 +66,10 @@ struct DiskSettings {
     dictation_sounds: bool,
     #[serde(rename = "pressEnterCommand", default)]
     press_enter_command: bool,
+    #[serde(rename = "cleanupMode", default = "default_cleanup_mode")]
+    cleanup_mode: String,
+    #[serde(rename = "llmModel", default = "default_llm_model")]
+    llm_model: String,
 }
 
 impl From<&Settings> for DiskSettings {
@@ -73,6 +86,8 @@ impl From<&Settings> for DiskSettings {
             show_in_dock: s.show_in_dock,
             dictation_sounds: s.dictation_sounds,
             press_enter_command: s.press_enter_command,
+            cleanup_mode: s.cleanup_mode.clone(),
+            llm_model: s.llm_model.clone(),
         }
     }
 }
@@ -92,6 +107,8 @@ impl Default for Settings {
             show_in_dock: true,
             dictation_sounds: true,
             press_enter_command: false,
+            cleanup_mode: default_cleanup_mode(),
+            llm_model: default_llm_model(),
         }
     }
 }
@@ -130,6 +147,8 @@ impl Settings {
                         show_in_dock: d.show_in_dock,
                         dictation_sounds: d.dictation_sounds,
                         press_enter_command: d.press_enter_command,
+                        cleanup_mode: d.cleanup_mode,
+                        llm_model: d.llm_model,
                     })
                     .unwrap_or_default();
 

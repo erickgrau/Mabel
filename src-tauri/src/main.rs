@@ -8,6 +8,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutEvent, ShortcutSta
 
 use mabel_lib::audio;
 use mabel_lib::downloader;
+use mabel_lib::llm::LlmServer;
 use mabel_lib::recorder::{Recorder, RecordingState};
 use mabel_lib::settings::Settings;
 use mabel_lib::stats::{StatsStore, StatsSummary};
@@ -19,6 +20,7 @@ struct AppState {
     settings: Mutex<Settings>,
     app_dir: PathBuf,
     stats: Arc<StatsStore>,
+    llm_server: Arc<LlmServer>,
 }
 
 #[derive(serde::Serialize)]
@@ -78,6 +80,13 @@ fn request_accessibility() -> bool {
     already_trusted
 }
 
+/// Fires a benign AppleScript so macOS shows the "Mabel wants to send Apple
+/// events to System Events" prompt during setup, not on first paste.
+#[tauri::command]
+fn request_apple_events_permission() {
+    system_ui::prime_apple_events_permission();
+}
+
 fn get_app_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -86,7 +95,23 @@ fn get_app_dir() -> PathBuf {
 
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Settings {
-    state.settings.lock().unwrap().clone()
+    let mut s = state.settings.lock().unwrap().clone();
+    // Reconcile against the keychain: a previous install may have stored a Groq
+    // key, then the config.json got deleted (or the user is on a fresh install
+    // of a new version). The key is still in the keychain — surface it so the
+    // UI shows "Saved" instead of asking for the key again.
+    //
+    // This call may trigger the macOS keychain access prompt the first time
+    // after install. That's the right moment for it: the user is in Settings,
+    // expects keychain interaction, and grants once-and-forever per signature.
+    if !s.groq_key_configured && mabel_lib::secrets::has_groq_key() {
+        s.groq_key_configured = true;
+        // Persist the corrected flag so subsequent loads don't re-probe.
+        let mut held = state.settings.lock().unwrap();
+        held.groq_key_configured = true;
+        let _ = held.save(&state.app_dir);
+    }
+    s
 }
 
 #[tauri::command]
@@ -124,6 +149,45 @@ async fn download_model(
     let model_file = transcribe_local::model_filename(&model_size)?;
     let dest = state.app_dir.join(&model_file);
     downloader::download_model(app, &url, &dest).await
+}
+
+#[tauri::command]
+fn check_llm_model_downloaded(state: State<AppState>, model: String) -> bool {
+    match mabel_lib::llm::model_filename(&model) {
+        Ok(name) => state.app_dir.join(&name).exists(),
+        Err(_) => false,
+    }
+}
+
+#[tauri::command]
+async fn download_llm_model(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    model: String,
+) -> Result<(), String> {
+    let url = mabel_lib::llm::model_download_url(&model)?;
+    let name = mabel_lib::llm::model_filename(&model)?;
+    let dest = state.app_dir.join(&name);
+    downloader::download_model(app, &url, &dest).await
+}
+
+/// Starts (or confirms running) the llama-server with the configured LLM model.
+/// Idempotent: if already running with the right model, returns immediately.
+/// The frontend can call this when the user enables LLM cleanup so the first
+/// dictation doesn't pay the cold-start cost.
+#[tauri::command]
+async fn ensure_llm_started(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (model, app_dir, server) = {
+        let settings = state.settings.lock().unwrap();
+        let model = settings.llm_model.clone();
+        (model, state.app_dir.clone(), state.llm_server.clone())
+    };
+    let name = mabel_lib::llm::model_filename(&model)?;
+    let path = app_dir.join(&name);
+    server.start(&app, &model, &path).await
 }
 
 #[tauri::command]
@@ -277,7 +341,10 @@ fn main() {
 
     let stats = Arc::new(StatsStore::load(&app_dir));
     let recorder = Recorder::new(stats.clone());
+    let llm_server = Arc::new(LlmServer::new());
     let initial_show_in_dock = settings.show_in_dock;
+    let initial_cleanup_mode = settings.cleanup_mode.clone();
+    let initial_llm_model = settings.llm_model.clone();
 
     tauri::Builder::default()
         // Single-instance MUST be the first plugin registered. When a second
@@ -298,8 +365,9 @@ fn main() {
         .manage(AppState {
             recorder,
             settings: Mutex::new(settings),
-            app_dir,
+            app_dir: app_dir.clone(),
             stats,
+            llm_server: llm_server.clone(),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -316,6 +384,10 @@ fn main() {
             set_show_in_dock,
             check_accessibility,
             request_accessibility,
+            request_apple_events_permission,
+            check_llm_model_downloaded,
+            download_llm_model,
+            ensure_llm_started,
         ])
         .setup(move |app| {
             // Create the overlay window (small mic icon, top-right, always on top)
@@ -382,7 +454,38 @@ fn main() {
                 Err(e) => eprintln!("[Mabel] ERROR: Failed to register global shortcut: {}", e),
             }
 
+            // If the user has LLM cleanup configured and the model is on disk,
+            // warm the server now so the first dictation doesn't block on a
+            // 1–3s cold start. Best effort only — failure here just means the
+            // first cleanup pays the load cost (or falls back to rules).
+            if initial_cleanup_mode == "llm" {
+                if let Ok(name) = mabel_lib::llm::model_filename(&initial_llm_model) {
+                    let model_path = app_dir.join(&name);
+                    if model_path.exists() {
+                        let server = llm_server.clone();
+                        let model = initial_llm_model.clone();
+                        let warm_handle = handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(e) = server.start(&warm_handle, &model, &model_path).await {
+                                eprintln!("[Mabel] LLM warm-start failed: {}", e);
+                            }
+                        });
+                    }
+                }
+            }
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Stop the LLM server when the main window closes (full app exit).
+            // Tauri kills sidecars on app exit anyway, but doing this explicitly
+            // avoids any race where the killed process holds the port and the
+            // next launch can't bind.
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Some(state) = window.app_handle().try_state::<AppState>() {
+                    state.llm_server.stop();
+                }
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

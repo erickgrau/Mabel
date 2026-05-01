@@ -78,7 +78,13 @@ impl Recorder {
         self.streaming_words.store(0, Ordering::Relaxed);
         *self.started_at.lock().unwrap() = Some(Instant::now());
 
-        if settings.streaming {
+        // Skip streaming when AI cleanup is on. With streaming, each chunk is
+        // pasted independently with only the rules-based cleanup pass — the LLM
+        // never sees the full utterance, so the user gets a worse result than
+        // rules-only mode. In LLM mode we want the full utterance transcribed
+        // once, sent to the LLM once, and pasted once. The cost is losing the
+        // live-transcription feel; the benefit is the cleanup actually working.
+        if settings.streaming && settings.cleanup_mode != "llm" {
             let handle = streaming::spawn_vad_worker(
                 app.clone(),
                 self.audio_recorder.clone(),
@@ -179,7 +185,28 @@ impl Recorder {
         let _ = std::fs::copy(&temp_path, &debug_path);
         let _ = std::fs::remove_file(&temp_path);
 
-        let cleaned = cleanup_text(&raw_text);
+        let rule_cleaned = cleanup_text(&raw_text);
+        let cleaned = if settings.cleanup_mode == "llm" && !rule_cleaned.is_empty() {
+            println!("[Mabel] LLM cleanup input: {:?}", rule_cleaned);
+            let t0 = std::time::Instant::now();
+            match crate::llm::cleanup_with_llm(&rule_cleaned).await {
+                Ok(s) if !s.is_empty() => {
+                    println!("[Mabel] LLM cleanup output ({:?}): {:?}", t0.elapsed(), s);
+                    s
+                }
+                Ok(empty) => {
+                    println!("[Mabel] LLM returned empty ({:?}, raw={:?}); falling back to rules", t0.elapsed(), empty);
+                    rule_cleaned
+                }
+                Err(e) => {
+                    eprintln!("[Mabel] LLM cleanup failed ({:?}), using rules: {}", t0.elapsed(), e);
+                    rule_cleaned
+                }
+            }
+        } else {
+            rule_cleaned
+        };
+        println!("[Mabel] About to paste: {:?}", cleaned);
         let (to_paste, press_enter) =
             extract_press_enter_command(&cleaned, settings.press_enter_command);
         if !to_paste.is_empty() {

@@ -1,7 +1,7 @@
 {
   "name": "mabel",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "Privacy-first macOS dictation. Audio never leaves your Mac.",
   "author": "Chibitek Labs",
   "license": "MIT",

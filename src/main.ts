@@ -16,6 +16,8 @@ interface Settings {
   showInDock: boolean;
   dictationSounds: boolean;
   pressEnterCommand: boolean;
+  cleanupMode: string;
+  llmModel: string;
 }
 
 interface VersionInfo {
@@ -59,6 +61,12 @@ const modelSelect = $<HTMLSelectElement>("model-select");
 const downloadBtn = $<HTMLButtonElement>("download-btn");
 const downloadProgress = $("download-progress");
 const progressFill = $("progress-fill");
+const cleanupModeSelect = $<HTMLSelectElement>("cleanup-mode-select");
+const llmSettings = $("llm-settings");
+const llmModelSelect = $<HTMLSelectElement>("llm-model-select");
+const llmDownloadBtn = $<HTMLButtonElement>("llm-download-btn");
+const llmDownloadProgress = $("llm-download-progress");
+const llmProgressFill = $("llm-progress-fill");
 const groqKey = $<HTMLInputElement>("groq-key");
 const keySave = $<HTMLButtonElement>("key-save");
 const keyStatus = $("key-status");
@@ -155,6 +163,10 @@ async function loadSettings() {
   setEngine(currentSettings.engine);
   modelSelect.value = currentSettings.whisperModel;
   await checkModelStatus();
+  cleanupModeSelect.value = currentSettings.cleanupMode || "rules";
+  llmModelSelect.value = currentSettings.llmModel || "standard";
+  applyCleanupModeUi();
+  await checkLlmModelStatus();
   // The actual key is never echoed back from the keychain. We just show
   // "Saved" if a key was previously stored, and let the user overwrite it.
   groqKey.value = "";
@@ -252,12 +264,26 @@ async function checkModelStatus() {
   downloadBtn.disabled = downloaded;
 }
 
+async function checkLlmModelStatus() {
+  const downloaded = await invoke<boolean>("check_llm_model_downloaded", {
+    model: llmModelSelect.value,
+  });
+  llmDownloadBtn.textContent = downloaded ? "Downloaded" : "Download";
+  llmDownloadBtn.disabled = downloaded;
+}
+
+function applyCleanupModeUi() {
+  llmSettings.classList.toggle("hidden", cleanupModeSelect.value !== "llm");
+}
+
 async function saveSettings() {
   // Most settings saves should never carry the key — we don't want every mic
   // change to trip the keychain prompt on unsigned builds. The key is saved
   // explicitly via the Save button next to the input.
   currentSettings.microphone = micSelect.value;
   currentSettings.whisperModel = modelSelect.value;
+  currentSettings.cleanupMode = cleanupModeSelect.value;
+  currentSettings.llmModel = llmModelSelect.value;
   const previousKey = currentSettings.groqApiKey;
   currentSettings.groqApiKey = "";
   await invoke("save_settings", { settings: currentSettings });
@@ -303,6 +329,36 @@ downloadBtn.addEventListener("click", async () => {
     console.error("Download failed:", e);
   }
   downloadProgress.classList.add("hidden");
+});
+
+cleanupModeSelect.addEventListener("change", async () => {
+  applyCleanupModeUi();
+  await saveSettings();
+  if (cleanupModeSelect.value === "llm") {
+    // Best-effort warm start. Errors are logged; the actual cleanup path falls
+    // back to rules if the server isn't ready when dictation lands.
+    invoke("ensure_llm_started").catch((e) => console.error("LLM warm start:", e));
+  }
+});
+
+llmModelSelect.addEventListener("change", async () => {
+  await checkLlmModelStatus();
+  await saveSettings();
+});
+
+llmDownloadBtn.addEventListener("click", async () => {
+  llmDownloadBtn.disabled = true;
+  llmDownloadProgress.classList.remove("hidden");
+  llmProgressFill.style.width = "0%";
+  try {
+    await invoke("download_llm_model", { model: llmModelSelect.value });
+    llmDownloadBtn.textContent = "Downloaded";
+  } catch (e) {
+    llmDownloadBtn.textContent = "Retry";
+    llmDownloadBtn.disabled = false;
+    console.error("LLM download failed:", e);
+  }
+  llmDownloadProgress.classList.add("hidden");
 });
 
 keySave.addEventListener("click", () => saveGroqKey());
@@ -478,7 +534,11 @@ listen<string>("recording-state", (event) => {
 });
 
 listen<DownloadProgress>("download-progress", (event) => {
+  // The same progress event drives both the Whisper and LLM download bars,
+  // since only one download runs at a time. Update whichever bar is currently
+  // visible (its container is .hidden when not in flight).
   progressFill.style.width = `${event.payload.percent}%`;
+  llmProgressFill.style.width = `${event.payload.percent}%`;
   // Mirror to first-run modal if it's the active context.
   const firstrunFill = document.getElementById("firstrun-fill");
   const firstrunPct = document.getElementById("firstrun-pct");
@@ -508,6 +568,13 @@ async function maybeRunFirstTimeSetup() {
     retry.classList.add("hidden");
     fill.style.width = "0%";
     pct.textContent = "0%";
+    // Front-load every macOS permission Mabel needs while the model downloads,
+    // so the user grants them once during setup instead of being interrupted
+    // mid-dictation later. Both calls are non-blocking — they trigger the
+    // system prompts and return immediately. The Microphone prompt fires
+    // automatically on first audio capture, no need to prime here.
+    invoke("request_accessibility").catch((e) => console.error("accessibility prompt:", e));
+    invoke("request_apple_events_permission").catch((e) => console.error("apple events prompt:", e));
     try {
       await invoke("download_model", { modelSize: "small" });
       // Persist Small as the active model.

@@ -448,6 +448,31 @@
               <div id="download-progress" class="hidden">
                 <div id="progress-bar"><div id="progress-fill"></div></div>
               </div>
+              <div class="row">
+                <div class="row-text">
+                  <div class="row-label">Cleanup</div>
+                  <div class="row-hint">Rules: fast, no model needed. AI: a local LLM removes filler words, fixes punctuation, and normalizes numbers. Runs fully on-device.</div>
+                </div>
+                <select id="cleanup-mode-select" aria-label="Cleanup mode">
+                  <option value="rules">Rules only</option>
+                  <option value="llm">AI cleanup (local)</option>
+                </select>
+              </div>
+              <div class="row hidden" id="llm-settings">
+                <div class="row-text">
+                  <div class="row-label">AI cleanup model</div>
+                  <div class="row-hint">Gemma 4 E4B runs fully on-device. ~5 GB one-time download.</div>
+                </div>
+                <div class="model-row">
+                  <select id="llm-model-select" aria-label="LLM model">
+                    <option value="standard">Gemma 4 E4B (~5.0 GB)</option>
+                  </select>
+                  <button type="button" id="llm-download-btn" class="btn-secondary">Download</button>
+                </div>
+              </div>
+              <div id="llm-download-progress" class="hidden">
+                <div id="llm-progress-bar"><div id="llm-progress-fill"></div></div>
+              </div>
               <div class="row hidden" id="cloud-settings">
                 <div class="row-text">
                   <div class="row-label">Groq API key <span class="key-status hidden" id="key-status">Saved</span></div>
