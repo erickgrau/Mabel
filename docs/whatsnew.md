@@ -2,6 +2,14 @@
 
 The in-app first-launch popup (F10, not yet built) reads from this file. Every Mabel release MUST add an entry here. Newest version on top.
 
+## v1.1.3 (UNRELEASED)
+
+### New
+- _(work in progress — entries get added as features land)_
+
+### Fixed
+- _(work in progress)_
+
 ## v1.1.2 (2026-05-01)
 
 ### Fixed
