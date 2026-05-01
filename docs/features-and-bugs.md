@@ -126,6 +126,18 @@ Whisper supports it natively, just need to expose. Both competitors highlight 10
 ### F7. Agent mode (Glaido Pro beta)
 Voice commands that do things instead of typing: "summarize the selected text", "rewrite this more concisely", "translate to Spanish". Selection comes from accessibility API, result pasted back. This is differentiated territory worth exploring once F1 lands.
 
+### F10. "What's New" popup on first launch after update
+Every time the user updates Mabel, the first launch should pop a modal that shows the new version, new features, and bug fixes. Same pattern as Slack/Linear/etc.
+
+**Implementation sketch:**
+- Source file: `docs/whatsnew.md` (or similar) with entries per version. Bundled into the app.
+- On launch, compare current version (env!("CARGO_PKG_VERSION")) against last-seen version stored in Settings (`last_seen_version`).
+- If different, render the entries from current_version down to last_seen_version+1, then update last_seen_version.
+- Modal: small, dismissible, with a "What's new" header showing the version. Two sections: New / Fixed.
+- First-ever install: skip the popup (last_seen_version was just set during first-run flow).
+
+**Release process change:** every version bump MUST add an entry to the changelog source file. This is now a hard rule (see Claude memory `feedback_release_changelog.md`). Until F10 ships, treat the file as forward-compat: write entries now so they're ready when the popup ships.
+
 ### F9. Animated desktop companion ("Mabel-cat-on-desktop")
 Idea: animate the Mabel cat character as a desktop companion that occasionally walks around, idles, blinks, sits. Pure brand/delight play. Native macOS path: NSWindow with transparent background hosting a sprite-sheet PNG cycle, Core Animation timing. Out of scope for v1.1 (cleanup focus); revisit after Pro features ship.
 
