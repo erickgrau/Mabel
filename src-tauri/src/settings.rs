@@ -54,6 +54,17 @@ pub struct Settings {
     /// the popup with the changelog entries between them, then update this.
     #[serde(rename = "lastSeenVersion", default)]
     pub last_seen_version: String,
+    /// "en" (English-only Whisper model — better accuracy on English) or
+    /// "multi" (multilingual model). Defaults to "multi" so existing installs
+    /// continue using whatever ggml-{size}.bin they already downloaded; new
+    /// users get "en" via the first-run flow / Settings dropdown.
+    #[serde(rename = "whisperLanguage", default = "default_whisper_language")]
+    pub whisper_language: String,
+    /// Custom dictionary words. Prepended to whisper.cpp's `--prompt` so
+    /// proper nouns, acronyms, and jargon get spelled correctly. Stored
+    /// locally only.
+    #[serde(default)]
+    pub dictionary: Vec<String>,
 }
 
 fn default_streaming() -> bool { true }
@@ -63,6 +74,7 @@ fn default_llm_model() -> String { "standard".to_string() }
 fn default_companion_size() -> String { "medium".to_string() }
 fn default_companion_frequency() -> String { "30min".to_string() }
 fn default_companion_visit() -> String { "medium".to_string() }
+fn default_whisper_language() -> String { "multi".to_string() }
 
 /// What we actually serialize to disk. Excludes the Groq API key, which lives
 /// in the OS keychain. Keeps the same JSON shape the UI expects, minus the key.
@@ -101,6 +113,10 @@ struct DiskSettings {
     companion_visit: String,
     #[serde(rename = "lastSeenVersion", default)]
     last_seen_version: String,
+    #[serde(rename = "whisperLanguage", default = "default_whisper_language")]
+    whisper_language: String,
+    #[serde(default)]
+    dictionary: Vec<String>,
 }
 
 impl From<&Settings> for DiskSettings {
@@ -124,6 +140,8 @@ impl From<&Settings> for DiskSettings {
             companion_frequency: s.companion_frequency.clone(),
             companion_visit: s.companion_visit.clone(),
             last_seen_version: s.last_seen_version.clone(),
+            whisper_language: s.whisper_language.clone(),
+            dictionary: s.dictionary.clone(),
         }
     }
 }
@@ -150,6 +168,8 @@ impl Default for Settings {
             companion_frequency: default_companion_frequency(),
             companion_visit: default_companion_visit(),
             last_seen_version: String::new(),
+            whisper_language: default_whisper_language(),
+            dictionary: Vec::new(),
         }
     }
 }
@@ -195,6 +215,8 @@ impl Settings {
                         companion_frequency: d.companion_frequency,
                         companion_visit: d.companion_visit,
                         last_seen_version: d.last_seen_version,
+                        whisper_language: d.whisper_language,
+                        dictionary: d.dictionary,
                     })
                     .unwrap_or_default();
 

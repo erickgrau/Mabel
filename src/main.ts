@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 
@@ -23,6 +23,8 @@ interface Settings {
   companionFrequency: string;
   companionVisit: string;
   lastSeenVersion: string;
+  whisperLanguage: string;
+  dictionary: string[];
 }
 
 interface VersionInfo {
@@ -63,6 +65,7 @@ const engineCloud = $("engine-cloud");
 const localSettings = $("local-settings");
 const cloudSettings = $("cloud-settings");
 const modelSelect = $<HTMLSelectElement>("model-select");
+const languageSelect = $<HTMLSelectElement>("language-select");
 const downloadBtn = $<HTMLButtonElement>("download-btn");
 const downloadProgress = $("download-progress");
 const progressFill = $("progress-fill");
@@ -183,7 +186,9 @@ async function loadSettings() {
 
   setEngine(currentSettings.engine);
   modelSelect.value = currentSettings.whisperModel;
+  languageSelect.value = currentSettings.whisperLanguage || "multi";
   await checkModelStatus();
+  renderDictionary();
   cleanupModeSelect.value = currentSettings.cleanupMode || "rules";
   llmModelSelect.value = currentSettings.llmModel || "standard";
   applyCleanupModeUi();
@@ -285,6 +290,7 @@ function setRecordingMode(mode: string) {
 async function checkModelStatus() {
   const downloaded = await invoke<boolean>("check_model_downloaded", {
     modelSize: modelSelect.value,
+    language: languageSelect?.value || "multi",
   });
   downloadBtn.textContent = downloaded ? "Downloaded" : "Download";
   downloadBtn.disabled = downloaded;
@@ -308,6 +314,7 @@ async function saveSettings() {
   // explicitly via the Save button next to the input.
   currentSettings.microphone = micSelect.value;
   currentSettings.whisperModel = modelSelect.value;
+  currentSettings.whisperLanguage = languageSelect.value;
   currentSettings.cleanupMode = cleanupModeSelect.value;
   currentSettings.llmModel = llmModelSelect.value;
   currentSettings.companionSize = companionSizeSelect.value;
@@ -344,13 +351,84 @@ engineLocal.addEventListener("click", () => { setEngine("local"); saveSettings()
 engineCloud.addEventListener("click", () => { setEngine("cloud"); saveSettings(); });
 micSelect.addEventListener("change", () => saveSettings());
 modelSelect.addEventListener("change", async () => { await checkModelStatus(); saveSettings(); });
+languageSelect.addEventListener("change", async () => { await checkModelStatus(); saveSettings(); });
+
+// Custom dictionary editor. Words are stored locally in settings and prepended
+// to whisper.cpp's --prompt so proper nouns / acronyms / jargon decode
+// correctly. Never uploaded.
+const dictInput = $<HTMLInputElement>("dict-input");
+const dictAddBtn = $<HTMLButtonElement>("dict-add-btn");
+const dictList = $("dict-list");
+const dictEmpty = $("dict-empty");
+
+function renderDictionary() {
+  if (!dictList) return;
+  const words = currentSettings.dictionary || [];
+  dictList.innerHTML = "";
+  if (words.length === 0) {
+    dictEmpty.classList.remove("hidden");
+    return;
+  }
+  dictEmpty.classList.add("hidden");
+  for (const word of words) {
+    const chip = document.createElement("span");
+    chip.className = "dict-chip";
+    const text = document.createElement("span");
+    text.textContent = word;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remove ${word}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      currentSettings.dictionary = currentSettings.dictionary.filter((w) => w !== word);
+      renderDictionary();
+      saveSettings();
+    });
+    chip.appendChild(text);
+    chip.appendChild(remove);
+    dictList.appendChild(chip);
+  }
+}
+
+function addDictionaryEntry() {
+  const raw = dictInput.value.trim();
+  if (!raw) return;
+  // Allow multiple entries split by comma or newline so users can paste a list.
+  const candidates = raw
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const existing = new Set((currentSettings.dictionary || []).map((w) => w.toLowerCase()));
+  const next = [...(currentSettings.dictionary || [])];
+  for (const c of candidates) {
+    if (!existing.has(c.toLowerCase())) {
+      next.push(c);
+      existing.add(c.toLowerCase());
+    }
+  }
+  currentSettings.dictionary = next;
+  dictInput.value = "";
+  renderDictionary();
+  saveSettings();
+}
+
+dictAddBtn.addEventListener("click", addDictionaryEntry);
+dictInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addDictionaryEntry();
+  }
+});
 
 downloadBtn.addEventListener("click", async () => {
   downloadBtn.disabled = true;
   downloadProgress.classList.remove("hidden");
   progressFill.style.width = "0%";
   try {
-    await invoke("download_model", { modelSize: modelSelect.value });
+    await invoke("download_model", {
+      modelSize: modelSelect.value,
+      language: languageSelect?.value || "multi",
+    });
     downloadBtn.textContent = "Downloaded";
   } catch (e) {
     downloadBtn.textContent = "Retry";
@@ -614,9 +692,18 @@ listen<DownloadProgress>("download-progress", (event) => {
 
 async function maybeRunFirstTimeSetup() {
   const settings = await invoke<Settings>("get_settings");
-  const smallReady = await invoke<boolean>("check_model_downloaded", { modelSize: "small" });
-  const mediumReady = await invoke<boolean>("check_model_downloaded", { modelSize: "medium" });
-  if (smallReady || mediumReady) return; // already have a model
+  // Any existing whisper ggml on disk skips first-run, regardless of size or
+  // language variant — we don't want to nag a returning user with a fresh
+  // download just because we added .en variants.
+  const variants = [
+    { modelSize: "small", language: "multi" },
+    { modelSize: "small", language: "en" },
+    { modelSize: "medium", language: "multi" },
+    { modelSize: "medium", language: "en" },
+  ];
+  for (const v of variants) {
+    if (await invoke<boolean>("check_model_downloaded", v)) return;
+  }
 
   const modal = document.getElementById("firstrun-modal")!;
   const body = document.getElementById("firstrun-body")!;
@@ -628,7 +715,7 @@ async function maybeRunFirstTimeSetup() {
   modal.classList.remove("hidden");
 
   const startDownload = async () => {
-    body.textContent = "Downloading the Whisper Small model (~500 MB) so dictation works fully offline. This is a one-time setup.";
+    body.textContent = "Downloading the Whisper Small (English) model (~500 MB) so dictation works fully offline. This is a one-time setup.";
     foot.classList.remove("hidden");
     done.classList.add("hidden");
     retry.classList.add("hidden");
@@ -642,9 +729,10 @@ async function maybeRunFirstTimeSetup() {
     invoke("request_accessibility").catch((e) => console.error("accessibility prompt:", e));
     invoke("request_apple_events_permission").catch((e) => console.error("apple events prompt:", e));
     try {
-      await invoke("download_model", { modelSize: "small" });
-      // Persist Small as the active model.
-      currentSettings = { ...settings, whisperModel: "small" };
+      await invoke("download_model", { modelSize: "small", language: "en" });
+      // Persist Small (English-only) as the active model on first run —
+      // best accuracy out of the box for English dictation.
+      currentSettings = { ...settings, whisperModel: "small", whisperLanguage: "en" };
       await invoke("save_settings", { settings: currentSettings });
       body.textContent = "Whisper Small is ready. Mabel works fully offline, on this Mac. Audio never leaves the device.";
       foot.innerHTML = 'For better accuracy on long dictations, switch to the <b>Medium</b> model anytime in <b>Settings → Engine</b>. It is a larger one-time download.';
@@ -772,3 +860,80 @@ function renderChangelog(md: string): string {
 }
 
 maybeShowWhatsNew();
+
+// Easter egg: seven clicks anywhere on the hero (portrait + title block) within
+// the first ten seconds of opening the app toggle Mochi mode (hero portrait,
+// brand name, and view title swap). The flag is persisted in localStorage so
+// the chosen skin survives across launches; the same gesture toggles it back.
+(function mochiModeEasterEgg() {
+  const STORAGE_KEY = "mabel.mochiMode";
+  const UNLOCKED_KEY = "mabel.mochiUnlocked";
+  const portrait = document.getElementById("hero-portrait") as HTMLImageElement | null;
+  const title = document.getElementById("meet-title");
+  const brand = document.getElementById("brand-name");
+  const skinRow = document.getElementById("companion-skin-row");
+  const skinSelect = document.getElementById("companion-skin-select") as HTMLSelectElement | null;
+
+  const setMode = (on: boolean) => {
+    if (on) {
+      localStorage.setItem(STORAGE_KEY, "1");
+      localStorage.setItem(UNLOCKED_KEY, "1");
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+    apply(on);
+  };
+
+  const apply = (on: boolean) => {
+    if (portrait) {
+      portrait.src = on ? "/mochi.png" : "/mabel.png";
+      portrait.alt = on ? "Mochi" : "Mabel";
+      portrait.classList.toggle("mochi", on);
+    }
+    if (title) title.textContent = on ? "Meet Mochi" : "Meet Mabel";
+    if (brand) brand.textContent = on ? "Mochi" : "Mabel";
+    // Once unlocked, expose the Settings toggle so the user doesn't have to
+    // re-do the easter-egg gesture to switch back. Currently being in mochi
+    // mode counts as unlocked too — covers users who activated the egg on a
+    // build that didn't yet write the unlocked flag.
+    if (on) localStorage.setItem(UNLOCKED_KEY, "1");
+    if (skinRow && localStorage.getItem(UNLOCKED_KEY) === "1") {
+      skinRow.classList.remove("hidden");
+    }
+    if (skinSelect) skinSelect.value = on ? "mochi" : "mabel";
+    // Tell the companion window to swap its sprite skin. Re-emit a few times
+    // because the companion's listener may not have attached yet on first
+    // boot — the emits are idempotent.
+    const payload = { skin: on ? "mochi" : "mabel" };
+    emit("mabel-companion-skin", payload).catch(() => {});
+    setTimeout(() => emit("mabel-companion-skin", payload).catch(() => {}), 500);
+    setTimeout(() => emit("mabel-companion-skin", payload).catch(() => {}), 2000);
+  };
+
+  apply(localStorage.getItem(STORAGE_KEY) === "1");
+
+  if (skinSelect) {
+    skinSelect.addEventListener("change", () => {
+      setMode(skinSelect.value === "mochi");
+    });
+  }
+
+  const hero = document.querySelector(".hero") as HTMLElement | null;
+  if (!hero) return;
+  const start = Date.now();
+  let count = 0;
+  const onClick = () => {
+    if (Date.now() - start > 10000) {
+      hero.removeEventListener("click", onClick);
+      return;
+    }
+    count++;
+    console.log("[mochi-egg] click", count);
+    if (count >= 7) {
+      hero.removeEventListener("click", onClick);
+      setMode(localStorage.getItem(STORAGE_KEY) !== "1");
+    }
+  };
+  hero.addEventListener("click", onClick);
+  setTimeout(() => hero.removeEventListener("click", onClick), 10100);
+})();

@@ -193,8 +193,13 @@ fn get_recording_state(state: State<AppState>) -> RecordingState {
 }
 
 #[tauri::command]
-fn check_model_downloaded(state: State<AppState>, model_size: String) -> bool {
-    match transcribe_local::model_filename(&model_size) {
+fn check_model_downloaded(
+    state: State<AppState>,
+    model_size: String,
+    language: Option<String>,
+) -> bool {
+    let lang = language.unwrap_or_else(|| "multi".to_string());
+    match transcribe_local::model_filename(&model_size, &lang) {
         Ok(model_file) => state.app_dir.join(&model_file).exists(),
         Err(_) => false,
     }
@@ -205,9 +210,11 @@ async fn download_model(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     model_size: String,
+    language: Option<String>,
 ) -> Result<(), String> {
-    let url = transcribe_local::model_download_url(&model_size)?;
-    let model_file = transcribe_local::model_filename(&model_size)?;
+    let lang = language.unwrap_or_else(|| "multi".to_string());
+    let url = transcribe_local::model_download_url(&model_size, &lang)?;
+    let model_file = transcribe_local::model_filename(&model_size, &lang)?;
     let dest = state.app_dir.join(&model_file);
     downloader::download_model(app, &url, &dest).await
 }

@@ -158,6 +158,12 @@ kbd { font-family: var(--sans); }
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
 }
+.hero-portrait.mochi {
+  object-fit: contain;
+  transform: scale(1.45);
+  background: transparent;
+  box-shadow: none;
+}
 .hero-text { flex: 1; min-width: 0; }
 .hero-text .view-title { margin-bottom: 4px; }
 .view-title {
@@ -462,6 +468,39 @@ select:focus, input:focus { outline: 2px solid var(--salmon); outline-offset: -1
 
 .model-row { display: flex; gap: 8px; align-items: center; }
 .key-row { display: flex; gap: 8px; align-items: center; }
+.dict-input-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.dict-input-row input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+.dict-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.dict-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  background: var(--chip-bg, rgba(0,0,0,0.04));
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+}
+.dict-chip button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+  padding: 0 2px;
+}
+.dict-chip button:hover { color: var(--text); }
+.dict-empty { margin-top: 12px; color: var(--muted); font-size: 13px; }
+.dict-empty.hidden { display: none; }
 .key-status {
   display: inline-block;
   margin-left: 6px;

@@ -57,11 +57,35 @@
         animation: none;
         transform: translateX(-700vw);
       }
+      /*
+       * Mochi skin: a 16-frame sprite strip (1600vw wide). Rendered as a
+       * separate element layered on top of #sprite so Rust-side cssText
+       * writes (which hardcode 800vw/-600vw/-700vw for mabel) can't
+       * distort it. Hidden by default; shown when body.mochi-mode is set.
+       */
+      #mochi-sprite {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1600vw;
+        height: 100vh;
+        animation: mochi-walk 2s steps(16) infinite;
+        will-change: transform;
+        image-rendering: -webkit-optimize-contrast;
+        display: none;
+      }
+      @keyframes mochi-walk {
+        from { transform: translateX(0); }
+        to   { transform: translateX(-1600vw); }
+      }
+      body.mochi-mode #sprite { display: none; }
+      body.mochi-mode #mochi-sprite { display: block; }
     </style>
   </head>
   <body>
     <div id="stage">
       <img id="sprite" src="/mabel_walk.png" alt="" draggable="false" />
+      <img id="mochi-sprite" src="/mochi_walk.png" alt="" draggable="false" />
     </div>
     <script>
       const stage = document.getElementById('stage');
@@ -87,6 +111,11 @@
             sprite.classList.remove('blinking');
           }
         }).then(() => console.log('[companion] listening for state events'));
+        tauri.event.listen('mabel-companion-skin', (e) => {
+          const skin = (e.payload && e.payload.skin) || 'mabel';
+          document.body.classList.toggle('mochi-mode', skin === 'mochi');
+          console.log('[companion] skin event', skin);
+        }).then(() => console.log('[companion] listening for skin events'));
       } else {
         console.error('[companion] Tauri event API not available');
       }
