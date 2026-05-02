@@ -162,10 +162,19 @@ async fn transcribe_and_paste(
     is_final: bool,
 ) {
     let raw = match settings.engine.as_str() {
-        "local" => match transcribe_local::model_filename(&settings.whisper_model) {
+        "local" => match transcribe_local::model_filename(
+            &settings.whisper_model,
+            &settings.whisper_language,
+        ) {
             Ok(model_file) => {
                 let model_path = app_dir.join(model_file);
-                transcribe_local::transcribe_local(&app, &model_path, &path).await
+                transcribe_local::transcribe_local(
+                    &app,
+                    &model_path,
+                    &path,
+                    &settings.dictionary,
+                )
+                .await
             }
             Err(e) => Err(format!("invalid model: {}", e)),
         },

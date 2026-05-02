@@ -2,13 +2,14 @@
 
 The in-app first-launch popup (F10, not yet built) reads from this file. Every Mabel release MUST add an entry here. Newest version on top.
 
-## v1.1.3 (UNRELEASED)
+## v1.1.3 (2026-05-02)
 
 ### New
-- _(work in progress — entries get added as features land)_
+- English-only Whisper models. Settings → Engine → Language lets you pick English-only (recommended) or Multilingual. The English-only models are noticeably more accurate for English dictation. New installs default to English-only Small. Existing installs keep their current model and can switch in Settings, which will download the matching new model.
+- Custom Dictionary. Add proper nouns, acronyms, and jargon you dictate often, and Mabel will spell them correctly. Open the Dictionary tab in the sidebar. Words are stored locally on this Mac and never uploaded, even when using the cloud engine.
 
 ### Fixed
-- _(work in progress)_
+- More reliable transcription. Whisper now runs with steadier defaults. A previous tuning pass that bumped thread count caused streaming chunks to come back blank or with the classic "Thanks for watching" hallucination on quieter speech. Reverted.
 
 ## v1.1.2 (2026-05-01)
 

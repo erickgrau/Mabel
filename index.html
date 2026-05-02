@@ -21,7 +21,7 @@
               <path d="M6.5 7.5l3 4.5-3 4.5M11 7.5l3 4.5-3 4.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
-          <span class="brand-name">Mabel</span>
+          <span class="brand-name" id="brand-name">Mabel</span>
           <span class="brand-pill">Free</span>
         </div>
 
@@ -34,10 +34,9 @@
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 13h12M4 13V8M7.5 13V5M11 13V9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
             Insights
           </a>
-          <a class="nav-item locked" data-view="dictionary">
+          <a class="nav-item" data-view="dictionary">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 2.5h7l3 3v8H3v-11z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10 2.5v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
             Dictionary
-            <span class="lock-pill">Pro</span>
           </a>
           <a class="nav-item locked" data-view="snippets">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="5" r="1.5" stroke="currentColor" stroke-width="1.4"/><circle cx="4" cy="11" r="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 5.5L13 9.5M5.5 10.5L13 6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -80,9 +79,9 @@
       <main id="content">
         <section class="view active" data-view="home">
           <div class="hero">
-            <img class="hero-portrait" src="/mabel.png" alt="Mabel" />
+            <img class="hero-portrait" id="hero-portrait" src="/mabel.png" alt="Mabel" />
             <div class="hero-text">
-              <h1 class="view-title">Meet Mabel</h1>
+              <h1 class="view-title" id="meet-title">Meet Mabel</h1>
               <p class="view-sub">Your Mac is your dictation engine. Audio never leaves the device.</p>
             </div>
           </div>
@@ -168,9 +167,30 @@
           </div>
         </section>
 
-        <section class="view view-locked" data-view="dictionary">
-          <header class="view-header"><h1 class="view-title">Dictionary</h1><p class="view-sub">Custom vocabulary so Mabel spells the words that matter to you.</p></header>
-          <div class="card locked-card"><div class="locked-eyebrow">Pro feature</div><p>Activate Pro to add words, names, and acronyms Mabel should always get right.</p><button type="button" class="btn-primary">Activate Pro</button></div>
+        <section class="view" data-view="dictionary">
+          <header class="view-header"><h1 class="view-title">Dictionary</h1><p class="view-sub">Custom vocabulary so Mabel spells the words that matter to you. Stored locally on this Mac &mdash; never uploaded.</p></header>
+          <div class="card pane-card">
+            <div class="row">
+              <div class="row-text">
+                <div class="row-label">Add a word or phrase</div>
+                <div class="row-hint">Names, acronyms, jargon, brand names. One entry per line. Mabel passes these to Whisper as decoding hints.</div>
+              </div>
+            </div>
+            <div class="dict-input-row">
+              <input type="text" id="dict-input" placeholder="e.g. Chibitek, GGUF, Erick" autocomplete="off" />
+              <button type="button" id="dict-add-btn" class="btn-secondary">Add</button>
+            </div>
+            <div id="dict-list" class="dict-list"></div>
+            <div id="dict-empty" class="dict-empty">No words yet. Add the proper nouns, acronyms, or jargon you dictate often.</div>
+          </div>
+          <div class="card pane-card">
+            <div class="row">
+              <div class="row-text">
+                <div class="row-label">Privacy</div>
+                <div class="row-hint">Dictionary entries are stored in this Mac&rsquo;s local config file. They never leave the device, even when using the cloud engine.</div>
+              </div>
+            </div>
+          </div>
         </section>
         <section class="view view-locked" data-view="snippets">
           <header class="view-header"><h1 class="view-title">Snippets</h1><p class="view-sub">Voice-triggered text expansion.</p></header>
@@ -470,6 +490,16 @@
                   <button type="button" id="download-btn" class="btn-secondary">Download</button>
                 </div>
               </div>
+              <div class="row" id="language-settings">
+                <div class="row-text">
+                  <div class="row-label">Language</div>
+                  <div class="row-hint">English-only models are trained harder on English and noticeably more accurate. Pick Multilingual if you dictate in other languages — switching may affect accuracy and requires a new model download.</div>
+                </div>
+                <select id="language-select" aria-label="Whisper language">
+                  <option value="en">English-only (recommended)</option>
+                  <option value="multi">Multilingual</option>
+                </select>
+              </div>
               <div id="download-progress" class="hidden">
                 <div id="progress-bar"><div id="progress-fill"></div></div>
               </div>
@@ -591,6 +621,16 @@
                   <option value="short">Short</option>
                   <option value="medium">Medium</option>
                   <option value="long">Long</option>
+                </select>
+              </div>
+              <div class="row hidden" id="companion-skin-row">
+                <div class="row-text">
+                  <div class="row-label">Companion character</div>
+                  <div class="row-hint">Switch the desktop companion between Mabel and Mochi.</div>
+                </div>
+                <select id="companion-skin-select" aria-label="Companion character">
+                  <option value="mabel">Mabel</option>
+                  <option value="mochi">Mochi</option>
                 </select>
               </div>
               <div class="row hidden" id="companion-test-row">
