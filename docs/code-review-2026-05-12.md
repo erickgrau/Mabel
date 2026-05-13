@@ -55,7 +55,7 @@ The highest-risk audit items have been addressed in the working tree:
 
 **Why:** Users could lose unrelated clipboard text on every dictation.
 
-**Status:** Fixed for text clipboard contents. The previous text clipboard is restored after paste.
+**Status:** Fixed. The previous text clipboard is restored after paste, image-only clipboard contents are restored, and paste-command failures now restore or clear the clipboard instead of leaving the dictated text behind.
 
 ### Medium: What’s New model detection ignored language variants
 
@@ -87,4 +87,4 @@ The highest-risk audit items have been addressed in the working tree:
 
 - Bundle a production `llama-server` sidecar if AI cleanup should be available to all users.
 - Re-enable live dictation only after the streaming shutdown hang is fixed and covered by tests.
-- Clipboard restoration currently covers text clipboard contents; richer clipboard formats are not restored by the current `arboard` flow.
+- Clipboard restoration now covers text and image-only clipboard contents. Rich multi-format clipboard payloads still degrade to text because the current `arboard` flow cannot round-trip every macOS pasteboard type.

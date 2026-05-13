@@ -1,6 +1,8 @@
+use arboard::{Clipboard, ImageData};
+
 pub fn paste_text(text: &str) -> Result<(), String> {
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    let previous_text = clipboard.get_text().ok();
+    let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
+    let previous = ClipboardBackup::capture(&mut clipboard);
     clipboard.set_text(text).map_err(|e| e.to_string())?;
 
     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -14,15 +16,46 @@ pub fn paste_text(text: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to simulate paste: {}", e))?;
 
     if !output.status.success() {
+        previous.restore(&mut clipboard);
         return Err(format_command_failure("AppleScript paste", &output));
     }
 
     std::thread::sleep(std::time::Duration::from_millis(150));
-    if let Some(previous) = previous_text {
-        let _ = clipboard.set_text(previous);
-    }
+    previous.restore(&mut clipboard);
 
     Ok(())
+}
+
+enum ClipboardBackup {
+    Text(String),
+    Image(ImageData<'static>),
+    Empty,
+}
+
+impl ClipboardBackup {
+    fn capture(clipboard: &mut Clipboard) -> Self {
+        if let Ok(text) = clipboard.get_text() {
+            return Self::Text(text);
+        }
+        if let Ok(image) = clipboard.get_image() {
+            return Self::Image(image.to_owned_img());
+        }
+        Self::Empty
+    }
+
+    fn restore(self, clipboard: &mut Clipboard) {
+        match self {
+            Self::Text(text) => {
+                let _ = clipboard.set_text(text);
+            }
+            Self::Image(image) => {
+                let _ = clipboard.set_image(image);
+            }
+            Self::Empty => {
+                let _ = clipboard.clear();
+            }
+        }
+    }
 }
 
 pub fn press_return() -> Result<(), String> {
