@@ -5,13 +5,17 @@ pub fn paste_text(text: &str) -> Result<(), String> {
 
     std::thread::sleep(std::time::Duration::from_millis(50));
 
-    std::process::Command::new("osascript")
+    let output = std::process::Command::new("osascript")
         .args([
             "-e",
             r#"tell application "System Events" to keystroke "v" using command down"#,
         ])
         .output()
         .map_err(|e| format!("Failed to simulate paste: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format_command_failure("AppleScript paste", &output));
+    }
 
     std::thread::sleep(std::time::Duration::from_millis(150));
     if let Some(previous) = previous_text {
@@ -22,14 +26,30 @@ pub fn paste_text(text: &str) -> Result<(), String> {
 }
 
 pub fn press_return() -> Result<(), String> {
-    std::process::Command::new("osascript")
+    let output = std::process::Command::new("osascript")
         .args([
             "-e",
             r#"tell application "System Events" to key code 36"#,
         ])
         .output()
         .map_err(|e| format!("Failed to press Return: {}", e))?;
+    if !output.status.success() {
+        return Err(format_command_failure("AppleScript Return", &output));
+    }
     Ok(())
+}
+
+fn format_command_failure(action: &str, output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        "no command output".to_string()
+    };
+    format!("{} failed (status {}): {}", action, output.status, detail)
 }
 
 /// If `press_enter` is on and the transcription ends with a "press enter" /

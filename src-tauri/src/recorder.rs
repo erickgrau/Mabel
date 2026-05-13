@@ -298,6 +298,7 @@ impl Recorder {
                 crate::debug_log::append(app_dir, "pasting text");
                 println!("[Mabel] Pasting text");
                 paste_text(&to_paste)?;
+                crate::debug_log::append(app_dir, "paste command completed");
                 let words = to_paste.split_whitespace().count() as u64;
                 if words > 0 {
                     self.stats.record(words, elapsed_seconds);
