@@ -36,4 +36,4 @@ The in-app first-launch popup (F10, not yet built) reads from this file. Every M
 - Groq API key now shows as "Saved" after a fresh install if the key is still in your macOS Keychain from a previous version.
 
 ### New
-- AI cleanup tier (opt-in, ~5 GB download). When enabled, dictations are run through a local LLM after Whisper to remove filler words, fix punctuation, and normalize numbers and proper nouns. Runs fully on-device. Toggle in Settings → Engine.
+- AI cleanup tier (opt-in, ~5 GB download) now only appears when the local LLM runtime is available. When enabled, dictations are run through a local LLM after Whisper to remove filler words, fix punctuation, and normalize numbers and proper nouns. Runs fully on-device. Toggle in Settings → Engine.

@@ -28,6 +28,7 @@ target/
 
 # App-specific
 src-tauri/binaries/
+src-tauri/tauri.local.conf.json
 whisper.cpp/
 
 # Local experiments + reference patches not for shipping

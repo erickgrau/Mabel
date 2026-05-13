@@ -5,7 +5,7 @@ use tauri_plugin_shell::ShellExt;
 /// Whisper model sizes we accept. Anything else is rejected before it can
 /// flow into a file path or download URL.
 const ALLOWED_MODELS: &[&str] = &["small", "medium"];
-const ALLOWED_LANGUAGES: &[&str] = &["en", "multi"];
+const ALLOWED_LANGUAGES: &[&str] = &["en", "multi", "auto"];
 
 pub fn validate_model_size(size: &str) -> Result<&str, String> {
     if ALLOWED_MODELS.contains(&size) {
@@ -20,6 +20,16 @@ pub fn validate_language(lang: &str) -> Result<&str, String> {
         Ok(lang)
     } else {
         Err(format!("Invalid whisper language: {}", lang))
+    }
+}
+
+/// Maps persisted language setting to the whisper.cpp decoder flag.
+/// - en -> en (force English decoder)
+/// - multi -> auto (allow language auto-detection)
+pub fn whisper_decode_language(language: &str) -> Result<&'static str, String> {
+    match validate_language(language)? {
+        "en" => Ok("en"),
+        _ => Ok("auto"),
     }
 }
 
@@ -46,6 +56,7 @@ pub async fn transcribe_local(
     app: &AppHandle,
     model_path: &PathBuf,
     audio_path: &PathBuf,
+    whisper_language: &str,
     dictionary: &[String],
 ) -> Result<String, String> {
     if !model_path.exists() {
@@ -55,6 +66,7 @@ pub async fn transcribe_local(
     println!("[Mabel] Running whisper.cpp sidecar with model {:?}", model_path);
 
     let prompt = build_prompt(dictionary);
+    let decode_language = whisper_decode_language(whisper_language)?;
 
     // NOTE: We are NOT setting `-t` (thread count) right now. Bumping it to 6
     // caused a regression where streaming chunks came back blank or with the
@@ -71,11 +83,11 @@ pub async fn transcribe_local(
             "-f",
             audio_path.to_str().unwrap(),
             "--no-timestamps",
-            // Default to English. Auto-detect (-l auto) breaks accuracy on
-            // short utterances because Whisper occasionally picks the wrong
-            // language from a brief sample and forces English-sounding garbage.
+            // Honor the UI language setting.
+            // en -> force English decoder
+            // multi -> auto-detect language
             "-l",
-            "en",
+            decode_language,
             // Default 0.6 threshold. Our VAD already drops silent chunks, so
             // anything that reaches Whisper should plausibly contain speech;
             // we don't need to be permissive here and risk hallucinations.
@@ -98,7 +110,6 @@ pub async fn transcribe_local(
     }
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    println!("[Mabel DEBUG] Whisper raw output: {:?}", text);
     Ok(text)
 }
 
@@ -159,6 +170,13 @@ mod tests {
     fn test_model_download_url_rejects_unknown() {
         assert!(model_download_url("../../evil", "en").is_err());
         assert!(model_download_url("small", "../bad").is_err());
+    }
+
+    #[test]
+    fn test_whisper_decode_language_mapping() {
+        assert_eq!(whisper_decode_language("en").unwrap(), "en");
+        assert_eq!(whisper_decode_language("multi").unwrap(), "auto");
+        assert!(whisper_decode_language("fr").is_err());
     }
 
     #[test]

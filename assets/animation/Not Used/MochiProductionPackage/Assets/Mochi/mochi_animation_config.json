@@ -1,0 +1,17 @@
+{
+  "name": "Mochi",
+  "spriteSheet": "Assets/Mochi/Sprites/mochi_walk_16.png",
+  "frameCount": 16,
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "sheetWidth": 8192,
+  "sheetHeight": 512,
+  "alpha": true,
+  "walkFPS": 8,
+  "movementSpeed": 0.35,
+  "notes": [
+    "True RGBA alpha sprite sheet generated from current concept art.",
+    "Mochi walks slowly with tiny pause holds every 4 frames.",
+    "Further hand cleanup can improve leg consistency and edge fidelity."
+  ]
+}

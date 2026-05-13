@@ -172,6 +172,7 @@ async fn transcribe_and_paste(
                     &app,
                     &model_path,
                     &path,
+                    &settings.whisper_language,
                     &settings.dictionary,
                 )
                 .await
@@ -179,7 +180,9 @@ async fn transcribe_and_paste(
             Err(e) => Err(format!("invalid model: {}", e)),
         },
         "cloud" => match crate::secrets::get_groq_key() {
-            Ok(key) => transcribe_groq::transcribe_groq(&key, &path).await,
+            Ok(key) => {
+                transcribe_groq::transcribe_groq(&key, &path, &settings.whisper_language).await
+            }
             Err(e) => Err(e),
         },
         _ => Err(format!("unknown engine: {}", settings.engine)),

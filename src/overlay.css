@@ -1,0 +1,67 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Helvetica Neue', sans-serif;
+}
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 42px;
+  padding: 0 10px 0 18px;
+  background: #F4D9C9;
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(120, 60, 30, 0.18);
+  color: #B85A3A;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  font-weight: 600;
+}
+.pill[data-state="ready"] { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.pill[data-state="recording"] { opacity: 1; transform: translateY(0); }
+.pill[data-state="transcribing"] { opacity: 1; transform: translateY(0); background: #F0E5CC; color: #8C6B2F; }
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.mic-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+svg.matrix { display: block; }
+
+.stop-btn {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: transparent;
+  border: none;
+  color: currentColor;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.stop-btn:hover { background: rgba(184, 90, 58, 0.12); }
+.stop-btn svg { width: 11px; height: 11px; }
+.pill[data-state="transcribing"] .stop-btn { opacity: 0.4; pointer-events: none; }

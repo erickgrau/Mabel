@@ -78,21 +78,13 @@ impl Recorder {
         self.streaming_words.store(0, Ordering::Relaxed);
         *self.started_at.lock().unwrap() = Some(Instant::now());
 
-        // Skip streaming when AI cleanup is on. With streaming, each chunk is
-        // pasted independently with only the rules-based cleanup pass — the LLM
-        // never sees the full utterance, so the user gets a worse result than
-        // rules-only mode. In LLM mode we want the full utterance transcribed
-        // once, sent to the LLM once, and pasted once. The cost is losing the
-        // live-transcription feel; the benefit is the cleanup actually working.
+        // Temporary safety switch: disable streaming worker until we resolve
+        // a shutdown hang seen in stop_and_transcribe on some machines.
+        // This keeps dictation reliable by always using full-utterance
+        // transcription on stop.
         if settings.streaming && settings.cleanup_mode != "llm" {
-            let handle = streaming::spawn_vad_worker(
-                app.clone(),
-                self.audio_recorder.clone(),
-                settings.clone(),
-                app_dir.clone(),
-                self.streaming_words.clone(),
-            );
-            *self.streaming_handle.lock().unwrap() = Some(handle);
+            crate::debug_log::append(app_dir, "streaming requested but temporarily disabled");
+            *self.streaming_handle.lock().unwrap() = None;
         }
 
         *state = RecordingState::Recording;
@@ -113,6 +105,15 @@ impl Recorder {
         settings: &Settings,
         app_dir: &PathBuf,
     ) -> Result<String, String> {
+        crate::debug_log::append(app_dir, "stop_and_transcribe entered");
+        crate::debug_log::append(
+            app_dir,
+            &format!(
+                "settings snapshot: engine={} streaming={} cleanup_mode={}",
+                settings.engine, settings.streaming, settings.cleanup_mode
+            ),
+        );
+        println!("[Mabel] stop_and_transcribe entered");
         {
             let mut state = self.state.lock().unwrap();
             if *state != RecordingState::Recording {
@@ -163,72 +164,140 @@ impl Recorder {
         }
 
         let temp_path = app_dir.join("temp_recording.wav");
-        {
+        let stop_and_save_result = {
             let mut recorder = self.audio_recorder.lock().unwrap();
-            recorder.stop_and_save(&temp_path)?;
-        }
-
-        let raw_text = match settings.engine.as_str() {
-            "local" => {
-                let model_file = transcribe_local::model_filename(
-                    &settings.whisper_model,
-                    &settings.whisper_language,
-                )?;
-                let model_path = app_dir.join(model_file);
-                transcribe_local::transcribe_local(
-                    app,
-                    &model_path,
-                    &temp_path,
-                    &settings.dictionary,
-                )
-                .await?
-            }
-            "cloud" => {
-                let key = crate::secrets::get_groq_key()?;
-                transcribe_groq::transcribe_groq(&key, &temp_path).await?
-            }
-            _ => return Err(format!("Unknown engine: {}", settings.engine)),
+            recorder.stop_and_save(&temp_path)
         };
+        if let Err(err) = stop_and_save_result {
+            crate::debug_log::append(app_dir, &format!("stop_and_save failed: {}", err));
+            eprintln!("[Mabel] stop_and_save failed: {}", err);
 
-        let debug_path = app_dir.join("last_recording.wav");
-        let _ = std::fs::copy(&temp_path, &debug_path);
-        let _ = std::fs::remove_file(&temp_path);
-
-        let rule_cleaned = cleanup_text(&raw_text);
-        let cleaned = if settings.cleanup_mode == "llm" && !rule_cleaned.is_empty() {
-            println!("[Mabel] LLM cleanup input: {:?}", rule_cleaned);
-            let t0 = std::time::Instant::now();
-            match crate::llm::cleanup_with_llm(&rule_cleaned).await {
-                Ok(s) if !s.is_empty() => {
-                    println!("[Mabel] LLM cleanup output ({:?}): {:?}", t0.elapsed(), s);
-                    s
-                }
-                Ok(empty) => {
-                    println!("[Mabel] LLM returned empty ({:?}, raw={:?}); falling back to rules", t0.elapsed(), empty);
-                    rule_cleaned
-                }
-                Err(e) => {
-                    eprintln!("[Mabel] LLM cleanup failed ({:?}), using rules: {}", t0.elapsed(), e);
-                    rule_cleaned
-                }
+            {
+                let mut state = self.state.lock().unwrap();
+                *state = RecordingState::Ready;
+                let _ = app.emit("recording-state", RecordingState::Ready);
+                let _ = app.emit("stats-updated", ());
+                update_overlay(app, &RecordingState::Ready);
             }
+
+            let msg = format!("Failed to capture audio: {}", err);
+            let _ = app.emit("transcription-error", msg.clone());
+            return Err(msg);
+        }
+        if let Ok(meta) = std::fs::metadata(&temp_path) {
+            crate::debug_log::append(app_dir, &format!("captured temp wav {} bytes", meta.len()));
+            println!("[Mabel] Captured temp WAV: {} bytes", meta.len());
         } else {
-            rule_cleaned
-        };
-        println!("[Mabel] About to paste: {:?}", cleaned);
-        let (to_paste, press_enter) =
-            extract_press_enter_command(&cleaned, settings.press_enter_command);
-        if !to_paste.is_empty() {
-            paste_text(&to_paste)?;
-            let words = to_paste.split_whitespace().count() as u64;
-            if words > 0 {
-                self.stats.record(words, elapsed_seconds);
+            crate::debug_log::append(app_dir, "captured temp wav metadata unavailable");
+            println!("[Mabel] Captured temp WAV: metadata unavailable");
+        }
+
+        let result: Result<String, String> = async {
+            crate::debug_log::append(app_dir, &format!("transcription engine={}", settings.engine));
+            println!("[Mabel] Transcription engine: {}", settings.engine);
+            let raw_text = match settings.engine.as_str() {
+                "local" => {
+                    crate::debug_log::append(app_dir, "local transcription start");
+                    println!("[Mabel] Local transcription starting");
+                    let model_file = transcribe_local::model_filename(
+                        &settings.whisper_model,
+                        &settings.whisper_language,
+                    )?;
+                    let model_path = app_dir.join(model_file);
+                    transcribe_local::transcribe_local(
+                        app,
+                        &model_path,
+                        &temp_path,
+                        &settings.whisper_language,
+                        &settings.dictionary,
+                    )
+                    .await?
+                }
+                "cloud" => {
+                    crate::debug_log::append(app_dir, "cloud transcription start");
+                    println!("[Mabel] Cloud transcription starting");
+                    let key = crate::secrets::get_groq_key()?;
+                    transcribe_groq::transcribe_groq(&key, &temp_path, &settings.whisper_language)
+                        .await?
+                }
+                _ => return Err(format!("Unknown engine: {}", settings.engine)),
+            };
+            println!(
+                "[Mabel] Transcription returned (chars={})",
+                raw_text.chars().count()
+            );
+            crate::debug_log::append(
+                app_dir,
+                &format!("transcription returned chars={}", raw_text.chars().count()),
+            );
+
+            let rule_cleaned = cleanup_text(&raw_text);
+            let cleaned = if settings.cleanup_mode == "llm" && !rule_cleaned.is_empty() {
+                println!(
+                    "[Mabel] LLM cleanup requested (chars={})",
+                    rule_cleaned.chars().count()
+                );
+                let t0 = std::time::Instant::now();
+                match crate::llm::cleanup_with_llm(&rule_cleaned).await {
+                    Ok(s) if !s.is_empty() => {
+                        println!(
+                            "[Mabel] LLM cleanup succeeded ({:?}, chars={})",
+                            t0.elapsed(),
+                            s.chars().count()
+                        );
+                        s
+                    }
+                    Ok(empty) => {
+                        println!(
+                            "[Mabel] LLM returned empty ({:?}, chars={}); falling back to rules",
+                            t0.elapsed(),
+                            empty.chars().count()
+                        );
+                        rule_cleaned
+                    }
+                    Err(e) => {
+                        eprintln!("[Mabel] LLM cleanup failed ({:?}), using rules: {}", t0.elapsed(), e);
+                        rule_cleaned
+                    }
+                }
+            } else {
+                rule_cleaned
+            };
+
+            let (to_paste, press_enter) =
+                extract_press_enter_command(&cleaned, settings.press_enter_command);
+            println!(
+                "[Mabel] Final text prepared (chars={}, press_enter={})",
+                to_paste.chars().count(),
+                press_enter
+            );
+            crate::debug_log::append(
+                app_dir,
+                &format!(
+                    "final text chars={} press_enter={}",
+                    to_paste.chars().count(),
+                    press_enter
+                ),
+            );
+            if !to_paste.is_empty() {
+                crate::debug_log::append(app_dir, "pasting text");
+                println!("[Mabel] Pasting text");
+                paste_text(&to_paste)?;
+                let words = to_paste.split_whitespace().count() as u64;
+                if words > 0 {
+                    self.stats.record(words, elapsed_seconds);
+                }
             }
+            if press_enter {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let _ = press_return();
+            }
+
+            Ok(to_paste)
         }
-        if press_enter {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            let _ = press_return();
-        }
+        .await;
+
+        let _ = std::fs::remove_file(&temp_path);
 
         {
             let mut state = self.state.lock().unwrap();
@@ -238,11 +307,22 @@ impl Recorder {
             update_overlay(app, &RecordingState::Ready);
         }
 
-        if settings.dictation_sounds {
-            system_ui::play_sound("Pop");
+        match result {
+            Ok(text) => {
+                crate::debug_log::append(app_dir, "stop_and_transcribe succeeded");
+                println!("[Mabel] stop_and_transcribe succeeded");
+                if settings.dictation_sounds {
+                    system_ui::play_sound("Pop");
+                }
+                Ok(text)
+            }
+            Err(err) => {
+                crate::debug_log::append(app_dir, &format!("transcription pipeline failed: {}", err));
+                eprintln!("[Mabel] Transcription pipeline failed: {}", err);
+                let _ = app.emit("transcription-error", err.clone());
+                Err(err)
+            }
         }
-
-        Ok(to_paste)
     }
 }
 

@@ -170,6 +170,8 @@ function hideSetupCardIfDone() {
 hideSetupCardIfDone();
 
 let currentSettings: Settings;
+let llmRuntimeAvailable = false;
+const STREAMING_AVAILABLE = false;
 
 async function loadSettings() {
   currentSettings = await invoke<Settings>("get_settings");
@@ -189,7 +191,13 @@ async function loadSettings() {
   languageSelect.value = currentSettings.whisperLanguage || "multi";
   await checkModelStatus();
   renderDictionary();
+  llmRuntimeAvailable = await invoke<boolean>("llm_runtime_available");
   cleanupModeSelect.value = currentSettings.cleanupMode || "rules";
+  if (!llmRuntimeAvailable && cleanupModeSelect.value === "llm") {
+    cleanupModeSelect.value = "rules";
+    currentSettings.cleanupMode = "rules";
+    await saveSettings();
+  }
   llmModelSelect.value = currentSettings.llmModel || "standard";
   applyCleanupModeUi();
   await checkLlmModelStatus();
@@ -199,7 +207,13 @@ async function loadSettings() {
   groqKey.placeholder = currentSettings.groqKeyConfigured ? "•••••••••••••••• (stored)" : "gsk_...";
   keyStatus.classList.toggle("hidden", !currentSettings.groqKeyConfigured);
   setRecordingMode(currentSettings.recordingMode);
-  streamingToggle.setAttribute("aria-checked", String(currentSettings.streaming));
+  if (!STREAMING_AVAILABLE && currentSettings.streaming) {
+    currentSettings.streaming = false;
+    await saveSettings();
+  }
+  streamingToggle.disabled = !STREAMING_AVAILABLE;
+  streamingToggle.setAttribute("aria-disabled", String(!STREAMING_AVAILABLE));
+  streamingToggle.setAttribute("aria-checked", String(STREAMING_AVAILABLE && currentSettings.streaming));
   setSwitch(autostartToggle, currentSettings.launchAtLogin);
   setSwitch(dockToggle, currentSettings.showInDock);
   setSwitch(companionToggle, currentSettings.companionEnabled);
@@ -305,7 +319,12 @@ async function checkLlmModelStatus() {
 }
 
 function applyCleanupModeUi() {
-  llmSettings.classList.toggle("hidden", cleanupModeSelect.value !== "llm");
+  const llmOption = cleanupModeSelect.querySelector('option[value="llm"]') as HTMLOptionElement | null;
+  if (llmOption) {
+    llmOption.disabled = !llmRuntimeAvailable;
+    llmOption.textContent = llmRuntimeAvailable ? "AI cleanup (local)" : "AI cleanup (runtime unavailable)";
+  }
+  llmSettings.classList.toggle("hidden", cleanupModeSelect.value !== "llm" || !llmRuntimeAvailable);
 }
 
 async function saveSettings() {
@@ -439,9 +458,12 @@ downloadBtn.addEventListener("click", async () => {
 });
 
 cleanupModeSelect.addEventListener("change", async () => {
+  if (cleanupModeSelect.value === "llm" && !llmRuntimeAvailable) {
+    cleanupModeSelect.value = "rules";
+  }
   applyCleanupModeUi();
   await saveSettings();
-  if (cleanupModeSelect.value === "llm") {
+  if (cleanupModeSelect.value === "llm" && llmRuntimeAvailable) {
     // Best-effort warm start. Errors are logged; the actual cleanup path falls
     // back to rules if the server isn't ready when dictation lands.
     invoke("ensure_llm_started").catch((e) => console.error("LLM warm start:", e));
@@ -476,6 +498,7 @@ modeToggle.addEventListener("click", () => { setRecordingMode("toggle"); saveSet
 modePtt.addEventListener("click", () => { setRecordingMode("push-to-talk"); saveSettings(); });
 
 streamingToggle.addEventListener("click", () => {
+  if (!STREAMING_AVAILABLE) return;
   const next = streamingToggle.getAttribute("aria-checked") !== "true";
   streamingToggle.setAttribute("aria-checked", String(next));
   currentSettings.streaming = next;
@@ -677,6 +700,14 @@ listen<string>("recording-state", (event) => {
   lastRecordingState = state;
 });
 
+listen<string>("transcription-error", (event) => {
+  const msg = event.payload || "Unknown transcription error";
+  statusDot.className = "status-dot";
+  statusText.textContent = "Transcription failed";
+  console.error("transcription-error:", msg);
+  alert(`Transcription failed: ${msg}`);
+});
+
 listen<DownloadProgress>("download-progress", (event) => {
   // The same progress event drives both the Whisper and LLM download bars,
   // since only one download runs at a time. Update whichever bar is currently
@@ -721,13 +752,9 @@ async function maybeRunFirstTimeSetup() {
     retry.classList.add("hidden");
     fill.style.width = "0%";
     pct.textContent = "0%";
-    // Front-load every macOS permission Mabel needs while the model downloads,
-    // so the user grants them once during setup instead of being interrupted
-    // mid-dictation later. Both calls are non-blocking — they trigger the
-    // system prompts and return immediately. The Microphone prompt fires
-    // automatically on first audio capture, no need to prime here.
-    invoke("request_accessibility").catch((e) => console.error("accessibility prompt:", e));
-    invoke("request_apple_events_permission").catch((e) => console.error("apple events prompt:", e));
+    // Don't proactively trigger system permission prompts here. Unsigned test
+    // builds can re-prompt due to changing signatures, which is disruptive.
+    // Prompts will appear when the relevant feature is actually used.
     try {
       await invoke("download_model", { modelSize: "small", language: "en" });
       // Persist Small (English-only) as the active model on first run —
@@ -765,18 +792,14 @@ loadVersion();
 loadStats();
 maybeRunFirstTimeSetup();
 
-// Check Accessibility permission on launch. If not granted, fire the system
-// dialog and also open the Privacy pane. Re-checks every 3s so the UI updates
-// once the user toggles it on.
+// Check Accessibility status on launch, but do not auto-prompt. Unsigned test
+// builds can trigger repeated permission dialogs because binary signatures
+// change across builds.
 async function ensureAccessibility() {
   try {
     const trusted = await invoke<boolean>("check_accessibility");
     if (!trusted) {
-      await invoke("request_accessibility");
-      const interval = setInterval(async () => {
-        const ok = await invoke<boolean>("check_accessibility");
-        if (ok) clearInterval(interval);
-      }, 3000);
+      console.warn("Accessibility not granted yet. Prompt is deferred until needed.");
     }
   } catch (e) {
     console.error("accessibility check failed:", e);
@@ -798,9 +821,20 @@ async function maybeShowWhatsNew() {
     // top of it would be noisy. We detect "first launch ever" as no
     // lastSeenVersion AND no Whisper model on disk.
     if (!settings.lastSeenVersion) {
-      const small = await invoke<boolean>("check_model_downloaded", { modelSize: "small" });
-      const medium = await invoke<boolean>("check_model_downloaded", { modelSize: "medium" });
-      if (!small && !medium) return;
+      const variants = [
+        { modelSize: "small", language: "multi" },
+        { modelSize: "small", language: "en" },
+        { modelSize: "medium", language: "multi" },
+        { modelSize: "medium", language: "en" },
+      ];
+      let hasModel = false;
+      for (const v of variants) {
+        if (await invoke<boolean>("check_model_downloaded", v)) {
+          hasModel = true;
+          break;
+        }
+      }
+      if (!hasModel) return;
     }
     const entry = await invoke<{ version: string; body: string } | null>("get_whats_new");
     if (!entry) {

@@ -276,7 +276,7 @@
 
           <div class="card help-card">
             <h2 class="help-h">AI cleanup (optional)</h2>
-            <p>Settings &rarr; Engine &rarr; Cleanup. Switch from <b>Rules only</b> to <b>AI cleanup (local)</b> to download Gemma 4 E4B (~5&nbsp;GB, one-time) and run a local LLM pass after Whisper to remove filler words, fix punctuation, and normalize numbers and proper nouns. Runs fully on-device, never sends your audio or transcript anywhere. Adds about half a second per dictation once warmed up.</p>
+            <p>Settings &rarr; Engine &rarr; Cleanup. On builds with the local LLM runtime available, switch from <b>Rules only</b> to <b>AI cleanup (local)</b> to download Gemma 4 E4B (~5&nbsp;GB, one-time) and run a local cleanup pass after Whisper. Runs fully on-device, never sends your audio or transcript anywhere.</p>
           </div>
 
           <div class="card help-card">
@@ -291,7 +291,7 @@
 
           <div class="card help-card">
             <h2 class="help-h">Live dictation</h2>
-            <p>When enabled (Settings &rarr; Engine), Mabel transcribes and pastes in chunks while you speak instead of waiting until you stop. Useful for long dictations. Disable it for short snippets where you want a single clean paste.</p>
+            <p>Live dictation is paused while the streaming worker is being stabilized. Current builds transcribe once when you stop recording, then paste a single clean result.</p>
           </div>
 
           <div class="card help-card">
@@ -471,9 +471,9 @@
               <div class="row">
                 <div class="row-text">
                   <div class="row-label">Live dictation</div>
-                  <div class="row-hint">Transcribe and paste in chunks as you speak, instead of all at once when you stop.</div>
+                  <div class="row-hint">Paused while streaming reliability work is in progress. Current builds paste once after recording stops.</div>
                 </div>
-                <button type="button" id="streaming-toggle" class="switch" role="switch" aria-checked="true" aria-label="Live dictation">
+                <button type="button" id="streaming-toggle" class="switch" role="switch" aria-checked="false" aria-label="Live dictation" disabled>
                   <span class="switch-thumb"></span>
                 </button>
               </div>
@@ -506,7 +506,7 @@
               <div class="row">
                 <div class="row-text">
                   <div class="row-label">Cleanup</div>
-                  <div class="row-hint">Rules: fast, no model needed. AI: a local LLM removes filler words, fixes punctuation, and normalizes numbers. Runs fully on-device.</div>
+                  <div class="row-hint">Rules: fast, no model needed. AI cleanup appears only when the local LLM runtime is installed or bundled.</div>
                 </div>
                 <select id="cleanup-mode-select" aria-label="Cleanup mode">
                   <option value="rules">Rules only</option>

@@ -71,12 +71,9 @@ struct RunningServer {
     model: String,
 }
 
-/// Resolves the path to `llama-server` for spawning. Order:
-///   1. `MABEL_LLAMA_SERVER` env var (override, useful for dev)
-///   2. Bundled sidecar — `binaries/llama-server-aarch64-apple-darwin` next to
-///      the app binary. (Not yet wired; left as a TODO before shipping.)
-///   3. `/opt/homebrew/bin/llama-server` (Apple Silicon brew)
-///   4. `/usr/local/bin/llama-server` (Intel brew, or manually installed)
+/// Resolves the path to `llama-server` for spawning. For now this is a
+/// developer/runtime-installed feature: use `MABEL_LLAMA_SERVER` for an explicit
+/// binary, or a Homebrew-installed `llama-server`.
 ///
 /// Returns None if no candidate exists. Caller surfaces a friendly error so the
 /// LLM cleanup falls back to the rules-only pass.
@@ -97,6 +94,10 @@ fn resolve_llama_server_path() -> Option<PathBuf> {
         }
     }
     None
+}
+
+pub fn runtime_available() -> bool {
+    resolve_llama_server_path().is_some()
 }
 
 impl LlmServer {

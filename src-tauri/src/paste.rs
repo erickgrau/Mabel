@@ -1,5 +1,6 @@
 pub fn paste_text(text: &str) -> Result<(), String> {
     let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    let previous_text = clipboard.get_text().ok();
     clipboard.set_text(text).map_err(|e| e.to_string())?;
 
     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -13,7 +14,9 @@ pub fn paste_text(text: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to simulate paste: {}", e))?;
 
     std::thread::sleep(std::time::Duration::from_millis(150));
-    let _ = clipboard.clear();
+    if let Some(previous) = previous_text {
+        let _ = clipboard.set_text(previous);
+    }
 
     Ok(())
 }

@@ -16,7 +16,7 @@ Open source under the [MIT license](LICENSE). Fork it, build it, ship your own v
 
 - Press a global hotkey from any app, dictate, and the text appears at your cursor.
 - Toggle mode (press to start, press to stop) or push-to-talk (hold while speaking).
-- Live dictation: transcription streams in chunks while you speak, instead of one big pause at the end.
+- Single-paste dictation: record, transcribe once when you stop, then paste a clean result. Live chunked dictation is paused while the streaming worker is being stabilized.
 - Floating overlay shows a live waveform while recording. It floats over fullscreen apps and never steals focus from the app you are typing into.
 - Local stats on usage: words per minute, total words dictated, daily streak. Counts only, never content.
 - Voice command: end a dictation with "press enter" / "new line" and Mabel submits after pasting.
@@ -90,13 +90,13 @@ That gives you a hot-reloading dev build. Permissions, hotkey, recording, transc
 cd src-tauri && cargo test --lib
 ```
 
-## Build a local production DMG (unsigned)
+## Build a local production DMG
 
 ```bash
 npm run tauri build
 ```
 
-The DMG lands at `src-tauri/target/release/bundle/dmg/Mabel_<version>_aarch64.dmg`. It's unsigned, so macOS Gatekeeper will warn anyone who tries to open it. Fine for solo use; not for distribution.
+The DMG lands at `src-tauri/target/release/bundle/dmg/Mabel_<version>_aarch64.dmg`. The checked-in config uses placeholder macOS signing values. For distributable builds, create the private signing override documented below. For personal/dev builds, use `npm run tauri dev` unless you have configured local signing.
 
 ## Make it your own (forking)
 
@@ -104,10 +104,10 @@ If you fork Mabel and plan to ship your own builds, you must change four identif
 
 1. **Bundle identifier** — `src-tauri/tauri.conf.json` field `identifier`. Change `com.mabel.app` to your own reverse-DNS string (e.g. `com.yourname.mydictate`).
 2. **Product name** — `src-tauri/tauri.conf.json` field `productName`.
-3. **Signing identity** — `src-tauri/tauri.conf.json` field `bundle.macOS.signingIdentity`. Change to your own Developer ID (created below). Same for `providerShortName` (your team ID).
+3. **Signing identity** — keep real signing values out of source. Use a private `src-tauri/tauri.local.conf.json` override with your own Developer ID and `providerShortName` team ID.
 4. **Apple Events / TCC reset paths** — anywhere code references `com.mabel.app` directly (e.g. `tccutil reset Microphone com.mabel.app`), update to your bundle ID.
 
-Search the repo for `com.mabel.app` and `Erick Grau (DF9FB764AR)` to find every occurrence.
+Search the repo for `com.mabel.app` and `Developer ID Application: Your Name (TEAMID)` to find every occurrence that may need to change in your fork.
 
 ---
 
@@ -164,19 +164,24 @@ xcrun notarytool store-credentials AC_PASSWORD \
 
 You'll see `Credentials saved to Keychain.` The profile name `AC_PASSWORD` is what you'll reference later.
 
-## Configure tauri.conf.json
+## Configure local signing
 
-In `src-tauri/tauri.conf.json`, the `bundle.macOS` section already has the signing setup. Update three fields with your values:
+The checked-in `src-tauri/tauri.conf.json` uses placeholder signing values so the repository is safe to publish. Do not commit your real Apple Developer identity or team ID.
+
+Create a private `src-tauri/tauri.local.conf.json` file for local or CI signing:
 
 ```json
-"macOS": {
-  "minimumSystemVersion": "11.0",
-  "signingIdentity": "Developer ID Application: Your Name (YOURTEAMID)",
-  "providerShortName": "YOURTEAMID",
-  "entitlements": "entitlements.plist",
-  "hardenedRuntime": true
+{
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Your Name (TEAMID)",
+      "providerShortName": "TEAMID"
+    }
+  }
 }
 ```
+
+`src-tauri/tauri.local.conf.json` is ignored by Git. In CI, generate this file from private secrets immediately before the build, or pass an equivalent Tauri config override.
 
 The `entitlements.plist` file is already in `src-tauri/`. It declares:
 - Audio input (mic capture)
@@ -185,13 +190,15 @@ The `entitlements.plist` file is already in `src-tauri/`. It declares:
 - JIT and unsigned executable memory (required by WebKit)
 - Disable library validation (required to load whisper-cpp sidecar binary)
 
+The last two hardened-runtime entitlements, plus JIT, are security-sensitive. Keep them only while they are required by the WebKit runtime or the whisper-cpp sidecar loading path, and re-test builds after removing any one of them before shipping a tighter entitlement set.
+
 ## Build with signing + notarization
 
 ```bash
 APPLE_ID="your-apple-id@example.com" \
 APPLE_PASSWORD="abcd-efgh-ijkl-mnop" \
 APPLE_TEAM_ID="YOURTEAMID" \
-npm run tauri build
+npm run tauri build -- --config src-tauri/tauri.local.conf.json
 ```
 
 The build:
@@ -294,7 +301,7 @@ src-tauri/
 
 ## Audio path
 
-cpal captures 16 kHz mono PCM into a ring buffer. With streaming on, a tokio worker watches RMS levels and slices the buffer at silence boundaries, shipping each chunk to Whisper while recording continues. Without streaming, the entire buffer is written to a WAV file when you stop, transcribed once, pasted once.
+cpal captures audio into an in-memory buffer. Current builds write the buffered audio to a temporary WAV file when you stop, transcribe once, delete the temp file, and paste once. The VAD-driven streaming worker remains in the codebase but is disabled while its shutdown behavior is being stabilized.
 
 ## Overlay
 

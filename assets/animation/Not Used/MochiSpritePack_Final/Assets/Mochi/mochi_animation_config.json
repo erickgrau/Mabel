@@ -1,0 +1,25 @@
+{
+  "name": "mochi_walk",
+  "character": "Mochi",
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "frameCount": 16,
+  "sheetWidth": 8192,
+  "sheetHeight": 512,
+  "fps": 8,
+  "loop": true,
+  "anchor": "bottom-center",
+  "alpha": true,
+  "behavior": {
+    "walkSpeed": "slow",
+    "microPausesAfterFrames": [
+      4,
+      8,
+      12,
+      16
+    ],
+    "tongue": "low-centered",
+    "tail": "short",
+    "personality": "gentle-anxious"
+  }
+}

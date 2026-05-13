@@ -67,7 +67,7 @@ pub struct Settings {
     pub dictionary: Vec<String>,
 }
 
-fn default_streaming() -> bool { true }
+fn default_streaming() -> bool { false }
 fn default_true() -> bool { true }
 fn default_cleanup_mode() -> String { "rules".to_string() }
 fn default_llm_model() -> String { "standard".to_string() }
@@ -155,7 +155,7 @@ impl Default for Settings {
             groq_api_key: String::new(),
             recording_mode: "toggle".to_string(),
             hotkey: "CmdOrCtrl+D".to_string(),
-            streaming: true,
+            streaming: false,
             groq_key_configured: false,
             launch_at_login: false,
             show_in_dock: true,
@@ -181,7 +181,7 @@ impl Settings {
 
     pub fn load(app_dir: &PathBuf) -> Self {
         let path = Self::config_path(app_dir);
-        let (settings, needs_migration) = match fs::read_to_string(&path) {
+        let (mut settings, mut needs_migration) = match fs::read_to_string(&path) {
             Ok(contents) => {
                 // Detect plaintext groqApiKey in old config.json and stage it
                 // for migration into the keychain.
@@ -229,6 +229,13 @@ impl Settings {
             }
             Err(_) => (Self::default(), false),
         };
+
+        // Backward-compat migration: older builds stored whisperLanguage as
+        // "auto". Internally we now persist "multi" for that behavior.
+        if settings.whisper_language == "auto" {
+            settings.whisper_language = "multi".to_string();
+            needs_migration = true;
+        }
 
         // Don't proactively read the Groq key from the keychain on startup.
         // Unsigned dev builds get a new binary signature on every rebuild, which
@@ -278,7 +285,8 @@ mod tests {
         assert_eq!(settings.whisper_model, "small");
         assert_eq!(settings.groq_api_key, "");
         assert_eq!(settings.recording_mode, "toggle");
-        assert_eq!(settings.hotkey, "CmdOrCtrl+Shift+Space");
+        assert_eq!(settings.hotkey, "CmdOrCtrl+D");
+        assert!(!settings.streaming);
     }
 
     #[test]

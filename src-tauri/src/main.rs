@@ -228,6 +228,11 @@ fn check_llm_model_downloaded(state: State<AppState>, model: String) -> bool {
 }
 
 #[tauri::command]
+fn llm_runtime_available() -> bool {
+    mabel_lib::llm::runtime_available()
+}
+
+#[tauri::command]
 async fn download_llm_model(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -396,24 +401,51 @@ async fn do_toggle_recording(
     state: &AppState,
 ) -> Result<String, String> {
     let current_state = state.recorder.get_state();
+    mabel_lib::debug_log::append(
+        &state.app_dir,
+        &format!("do_toggle_recording called, state={:?}", current_state),
+    );
+    println!("[Mabel] do_toggle_recording called, state={:?}", current_state);
     match current_state {
         RecordingState::Ready => {
             let (mic, settings) = {
                 let s = state.settings.lock().unwrap();
                 (s.microphone.clone(), s.clone())
             };
+            mabel_lib::debug_log::append(
+                &state.app_dir,
+                &format!(
+                    "start_recording mic={} engine={} model={} lang={}",
+                    mic, settings.engine, settings.whisper_model, settings.whisper_language
+                ),
+            );
+            println!(
+                "[Mabel] Starting recording (mic={}, engine={}, model={}, lang={})",
+                mic, settings.engine, settings.whisper_model, settings.whisper_language
+            );
             state.recorder.start_recording(app, &mic, &settings, &state.app_dir)?;
+            mabel_lib::debug_log::append(&state.app_dir, "recording started successfully");
+            println!("[Mabel] Recording started successfully");
             Ok("recording".to_string())
         }
         RecordingState::Recording => {
             let settings = state.settings.lock().unwrap().clone();
+            mabel_lib::debug_log::append(&state.app_dir, "stop requested, beginning transcription");
+            println!("[Mabel] Stopping recording and starting transcription");
             let result = state
                 .recorder
                 .stop_and_transcribe(app, &settings, &state.app_dir)
                 .await?;
+            mabel_lib::debug_log::append(
+                &state.app_dir,
+                &format!("stop_and_transcribe completed (chars={})", result.chars().count()),
+            );
+            println!("[Mabel] stop_and_transcribe completed");
             Ok(result)
         }
         RecordingState::Transcribing => {
+            mabel_lib::debug_log::append(&state.app_dir, "toggle ignored: currently transcribing");
+            println!("[Mabel] toggle ignored because state is Transcribing");
             Err("Currently transcribing, please wait".to_string())
         }
     }
@@ -473,6 +505,7 @@ fn main() {
             request_accessibility,
             request_apple_events_permission,
             check_llm_model_downloaded,
+            llm_runtime_available,
             download_llm_model,
             ensure_llm_started,
             companion_visit_now,
@@ -623,4 +656,3 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

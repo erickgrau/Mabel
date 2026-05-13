@@ -1,0 +1,36 @@
+{
+  "name": "mochi_walk_fixed",
+  "character": "Mochi",
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "frameCount": 16,
+  "sheetWidth": 8192,
+  "sheetHeight": 512,
+  "fps": 8,
+  "loop": true,
+  "anchor": "bottom-center",
+  "alpha": true,
+  "verifiedNonBlankAlphaPixels": 408661,
+  "perFrameAlphaPixels": [
+    5325,
+    4996,
+    4952,
+    4774,
+    5176,
+    5123,
+    5064,
+    4983,
+    4890,
+    5137,
+    4427,
+    4355,
+    4698,
+    4213,
+    4821,
+    5295
+  ],
+  "notes": [
+    "Fixed pack generated after verifying nonblank alpha.",
+    "This is a repo-testable sprite asset built from current Mochi mockup output."
+  ]
+}
