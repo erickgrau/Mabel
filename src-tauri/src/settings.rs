@@ -237,6 +237,14 @@ impl Settings {
             needs_migration = true;
         }
 
+        // Live streaming is temporarily disabled while the VAD worker shutdown
+        // path is stabilized. Force older persisted configs back to the reliable
+        // full-utterance path at backend load time, not only from the UI.
+        if settings.streaming {
+            settings.streaming = false;
+            needs_migration = true;
+        }
+
         // Don't proactively read the Groq key from the keychain on startup.
         // Unsigned dev builds get a new binary signature on every rebuild, which
         // causes macOS to prompt for keychain access repeatedly and can hang the

@@ -65,9 +65,11 @@ impl Recorder {
         settings: &Settings,
         app_dir: &PathBuf,
     ) -> Result<(), String> {
-        let mut state = self.state.lock().unwrap();
-        if *state != RecordingState::Ready {
-            return Err("Already recording or transcribing".to_string());
+        {
+            let state = self.state.lock().unwrap();
+            if *state != RecordingState::Ready {
+                return Err("Already recording or transcribing".to_string());
+            }
         }
 
         {
@@ -87,7 +89,7 @@ impl Recorder {
             *self.streaming_handle.lock().unwrap() = None;
         }
 
-        *state = RecordingState::Recording;
+        *self.state.lock().unwrap() = RecordingState::Recording;
         let _ = app.emit("recording-state", RecordingState::Recording);
         update_overlay(app, &RecordingState::Recording);
 
@@ -115,14 +117,20 @@ impl Recorder {
         );
         println!("[Mabel] stop_and_transcribe entered");
         {
+            crate::debug_log::append(app_dir, "transitioning recorder state to Transcribing");
             let mut state = self.state.lock().unwrap();
             if *state != RecordingState::Recording {
+                crate::debug_log::append(
+                    app_dir,
+                    &format!("stop ignored: recorder state was {:?}", *state),
+                );
                 return Err("Not currently recording".to_string());
             }
             *state = RecordingState::Transcribing;
             let _ = app.emit("recording-state", RecordingState::Transcribing);
             update_overlay(app, &RecordingState::Transcribing);
         }
+        crate::debug_log::append(app_dir, "recorder state is Transcribing");
 
         let elapsed_seconds = self
             .started_at
@@ -193,7 +201,10 @@ impl Recorder {
         }
 
         let result: Result<String, String> = async {
-            crate::debug_log::append(app_dir, &format!("transcription engine={}", settings.engine));
+            crate::debug_log::append(
+                app_dir,
+                &format!("transcription engine={}", settings.engine),
+            );
             println!("[Mabel] Transcription engine: {}", settings.engine);
             let raw_text = match settings.engine.as_str() {
                 "local" => {
@@ -256,7 +267,11 @@ impl Recorder {
                         rule_cleaned
                     }
                     Err(e) => {
-                        eprintln!("[Mabel] LLM cleanup failed ({:?}), using rules: {}", t0.elapsed(), e);
+                        eprintln!(
+                            "[Mabel] LLM cleanup failed ({:?}), using rules: {}",
+                            t0.elapsed(),
+                            e
+                        );
                         rule_cleaned
                     }
                 }
@@ -317,7 +332,10 @@ impl Recorder {
                 Ok(text)
             }
             Err(err) => {
-                crate::debug_log::append(app_dir, &format!("transcription pipeline failed: {}", err));
+                crate::debug_log::append(
+                    app_dir,
+                    &format!("transcription pipeline failed: {}", err),
+                );
                 eprintln!("[Mabel] Transcription pipeline failed: {}", err);
                 let _ = app.emit("transcription-error", err.clone());
                 Err(err)
