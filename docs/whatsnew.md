@@ -1,6 +1,19 @@
 # What's New in Mabel
 
-The in-app first-launch popup (F10, not yet built) reads from this file. Every Mabel release MUST add an entry here. Newest version on top.
+The in-app first-launch popup reads from this file. Every Mabel release MUST add an entry here. Newest version on top.
+
+## v1.1.6 (2026-05-13)
+
+### New
+- Signed and notarized test build. Mabel now uses a stable Developer ID identity so macOS Accessibility and Automation permissions stick across installs.
+- In-app updates are ready. Settings → About now includes a signed update checker backed by GitHub Releases, so future versions can be installed from inside Mabel.
+- The share DMG now includes the Mabel app icon, volume icon, and Applications shortcut before signing and notarization.
+
+### Fixed
+- Push-to-talk transcription no longer stalls after releasing the hotkey.
+- Paste failures now report the real AppleScript error in the debug log.
+- If automatic paste fails, Mabel restores the previous clipboard instead of leaving the dictated text there.
+- Image-only clipboard contents are preserved around dictation paste.
 
 ## v1.1.3 (2026-05-02)
 

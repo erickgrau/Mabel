@@ -85,6 +85,7 @@ const modePtt = $("mode-ptt");
 const hotkeyText = $("hotkey-text");
 const streamingToggle = $<HTMLButtonElement>("streaming-toggle");
 const checkUpdatesBtn = $<HTMLButtonElement>("check-updates-btn");
+const showWhatsNewBtn = $<HTMLButtonElement>("show-whatsnew-btn");
 const updateStatus = $("update-status");
 
 const appWindow = getCurrentWindow();
@@ -853,6 +854,36 @@ async function ensureAccessibility() {
 }
 ensureAccessibility();
 
+async function showWhatsNew(markSeen: boolean) {
+  const entry = await invoke<{ version: string; body: string } | null>("get_whats_new");
+  if (!entry) {
+    updateStatus.textContent = "No release notes are bundled for this version.";
+    return false;
+  }
+  const modal = document.getElementById("whatsnew-modal")!;
+  const verEl = document.getElementById("whatsnew-version")!;
+  const bodyEl = document.getElementById("whatsnew-body")!;
+  const done = document.getElementById("whatsnew-done")!;
+  verEl.textContent = "v" + entry.version;
+  bodyEl.innerHTML = renderChangelog(entry.body);
+  modal.classList.remove("hidden");
+
+  const dismiss = async () => {
+    modal.classList.add("hidden");
+    if (markSeen) await invoke("mark_version_seen");
+  };
+  done.replaceWith(done.cloneNode(true));
+  document.getElementById("whatsnew-done")!.addEventListener("click", dismiss, { once: true });
+  return true;
+}
+
+showWhatsNewBtn.addEventListener("click", () => {
+  showWhatsNew(false).catch((e) => {
+    console.error("show whats-new failed:", e);
+    updateStatus.textContent = `What's New failed: ${String(e)}`;
+  });
+});
+
 // What's New popup. On first launch after an update (or first launch ever
 // after the user has finished the initial Whisper download), if the bundled
 // changelog has an entry for the running version, pop a modal showing what
@@ -882,28 +913,12 @@ async function maybeShowWhatsNew() {
       }
       if (!hasModel) return;
     }
-    const entry = await invoke<{ version: string; body: string } | null>("get_whats_new");
-    if (!entry) {
+    const shown = await showWhatsNew(true);
+    if (!shown) {
       // No changelog entry for this version — still mark it seen so we don't
       // try again next launch.
       await invoke("mark_version_seen");
-      return;
     }
-    const modal = document.getElementById("whatsnew-modal")!;
-    const verEl = document.getElementById("whatsnew-version")!;
-    const bodyEl = document.getElementById("whatsnew-body")!;
-    verEl.textContent = "v" + entry.version;
-    bodyEl.innerHTML = renderChangelog(entry.body);
-    modal.classList.remove("hidden");
-    const dismiss = async () => {
-      modal.classList.add("hidden");
-      await invoke("mark_version_seen");
-    };
-    // Only the "Got it" button dismisses. Deliberately NOT wiring backdrop
-    // clicks — early on we saw lastSeenVersion get set without the user ever
-    // seeing the popup, which a stray backdrop event would explain. The user
-    // has to actively acknowledge the changes.
-    document.getElementById("whatsnew-done")!.addEventListener("click", dismiss, { once: true });
   } catch (e) {
     console.error("whats-new check failed:", e);
   }
