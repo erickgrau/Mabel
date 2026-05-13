@@ -31,6 +31,19 @@ src-tauri/binaries/
 src-tauri/tauri.local.conf.json
 whisper.cpp/
 
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p8
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+
 # Local experiments + reference patches not for shipping
 swift-fm/
 src-tauri/v1.patch
