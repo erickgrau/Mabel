@@ -3,7 +3,7 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
+import { check, Update } from "@tauri-apps/plugin-updater";
 
 interface Settings {
   microphone: string;
@@ -87,6 +87,12 @@ const streamingToggle = $<HTMLButtonElement>("streaming-toggle");
 const checkUpdatesBtn = $<HTMLButtonElement>("check-updates-btn");
 const showWhatsNewBtn = $<HTMLButtonElement>("show-whatsnew-btn");
 const updateStatus = $("update-status");
+const updateModal = $("update-modal");
+const updateVersion = $("update-version");
+const updateBody = $("update-body");
+const updateInstallBtn = $<HTMLButtonElement>("update-install");
+const updateLaterBtn = $<HTMLButtonElement>("update-later");
+let pendingUpdate: Update | null = null;
 
 const appWindow = getCurrentWindow();
 $("titlebar").addEventListener("mousedown", (e) => {
@@ -246,46 +252,80 @@ async function loadVersion() {
   }
 }
 
-async function checkForUpdates() {
-  checkUpdatesBtn.disabled = true;
-  updateStatus.textContent = "Checking...";
+async function installUpdate(update: Update, statusEl: HTMLElement) {
+  const next = update.version ? `v${update.version}` : "the latest version";
+  statusEl.textContent = `Downloading ${next}...`;
+  updateInstallBtn.disabled = true;
+  let downloaded = 0;
+  let contentLength = 0;
+  await update.downloadAndInstall((event) => {
+    if (event.event === "Started") {
+      contentLength = event.data.contentLength ?? 0;
+    } else if (event.event === "Progress") {
+      downloaded += event.data.chunkLength;
+      if (contentLength > 0) {
+        const pct = Math.min(100, Math.round((downloaded / contentLength) * 100));
+        statusEl.textContent = `Downloading ${next}... ${pct}%`;
+      }
+    } else if (event.event === "Finished") {
+      statusEl.textContent = "Installing update...";
+    }
+  });
+
+  statusEl.textContent = "Update installed. Relaunching...";
+  await relaunch();
+}
+
+function showUpdatePrompt(update: Update) {
+  pendingUpdate = update;
+  updateVersion.textContent = `v${update.version} is available`;
+  updateBody.innerHTML = renderChangelog(
+    update.body || "A new signed Mabel update is ready to install."
+  );
+  updateInstallBtn.disabled = false;
+  updateModal.classList.remove("hidden");
+}
+
+async function checkForUpdates(showPrompt: boolean) {
+  if (!showPrompt) {
+    checkUpdatesBtn.disabled = true;
+    updateStatus.textContent = "Checking...";
+  }
   try {
     const update = await check({ timeout: 30000 });
     if (!update) {
-      updateStatus.textContent = "Mabel is up to date.";
+      if (!showPrompt) updateStatus.textContent = "Mabel is up to date.";
       return;
     }
 
-    const next = update.version ? `v${update.version}` : "the latest version";
-    updateStatus.textContent = `Downloading ${next}...`;
-    let downloaded = 0;
-    let contentLength = 0;
-    await update.downloadAndInstall((event) => {
-      if (event.event === "Started") {
-        contentLength = event.data.contentLength ?? 0;
-      } else if (event.event === "Progress") {
-        downloaded += event.data.chunkLength;
-        if (contentLength > 0) {
-          const pct = Math.min(100, Math.round((downloaded / contentLength) * 100));
-          updateStatus.textContent = `Downloading ${next}... ${pct}%`;
-        }
-      } else if (event.event === "Finished") {
-        updateStatus.textContent = "Installing update...";
-      }
-    });
-
-    updateStatus.textContent = "Update installed. Relaunching...";
-    await relaunch();
+    if (showPrompt) {
+      showUpdatePrompt(update);
+    } else {
+      await installUpdate(update, updateStatus);
+    }
   } catch (e) {
     console.error("update check failed:", e);
-    updateStatus.textContent = `Update failed: ${String(e)}`;
+    if (!showPrompt) updateStatus.textContent = `Update failed: ${String(e)}`;
   } finally {
-    checkUpdatesBtn.disabled = false;
+    if (!showPrompt) checkUpdatesBtn.disabled = false;
   }
 }
 
 checkUpdatesBtn.addEventListener("click", () => {
-  checkForUpdates();
+  checkForUpdates(false);
+});
+
+updateLaterBtn.addEventListener("click", () => {
+  updateModal.classList.add("hidden");
+});
+
+updateInstallBtn.addEventListener("click", () => {
+  if (!pendingUpdate) return;
+  installUpdate(pendingUpdate, updateBody).catch((e) => {
+    console.error("update install failed:", e);
+    updateBody.textContent = `Update failed: ${String(e)}`;
+    updateInstallBtn.disabled = false;
+  });
 });
 
 const insWpm = document.getElementById("ins-wpm");
@@ -838,6 +878,9 @@ loadSettings();
 loadVersion();
 loadStats();
 maybeRunFirstTimeSetup();
+setTimeout(() => {
+  checkForUpdates(true);
+}, 2500);
 
 // Check Accessibility status on launch, but do not auto-prompt. Unsigned test
 // builds can trigger repeated permission dialogs because binary signatures

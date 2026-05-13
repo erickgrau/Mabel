@@ -791,6 +791,12 @@ select:focus, input:focus { outline: 2px solid var(--salmon); outline-offset: -1
   gap: 12px;
   margin: 0 0 14px;
 }
+.update-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
+}
 .about-copy { font-size: 11.5px; color: var(--text-faint); }
 
 .locked-pane .locked-card { text-align: left; }

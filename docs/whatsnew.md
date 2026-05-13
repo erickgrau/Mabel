@@ -2,6 +2,15 @@
 
 The in-app first-launch popup reads from this file. Every Mabel release MUST add an entry here. Newest version on top.
 
+## v1.1.7 (2026-05-13)
+
+### New
+- Startup update prompt. Mabel now checks for signed updates after launch and asks before downloading or installing anything.
+- Repeatable release automation. The signed release script builds the app, updater bundle, icon-bearing DMG, notarizes everything, creates `latest.json`, and uploads GitHub Release assets.
+
+### Fixed
+- The About → Check for Updates flow and the startup update prompt now share the same install path and progress messaging.
+
 ## v1.1.6 (2026-05-13)
 
 ### New
