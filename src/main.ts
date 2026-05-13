@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 
 interface Settings {
   microphone: string;
@@ -82,6 +84,8 @@ const modeToggle = $("mode-toggle");
 const modePtt = $("mode-ptt");
 const hotkeyText = $("hotkey-text");
 const streamingToggle = $<HTMLButtonElement>("streaming-toggle");
+const checkUpdatesBtn = $<HTMLButtonElement>("check-updates-btn");
+const updateStatus = $("update-status");
 
 const appWindow = getCurrentWindow();
 $("titlebar").addEventListener("mousedown", (e) => {
@@ -240,6 +244,48 @@ async function loadVersion() {
     console.error("get_version failed:", e);
   }
 }
+
+async function checkForUpdates() {
+  checkUpdatesBtn.disabled = true;
+  updateStatus.textContent = "Checking...";
+  try {
+    const update = await check({ timeout: 30000 });
+    if (!update) {
+      updateStatus.textContent = "Mabel is up to date.";
+      return;
+    }
+
+    const next = update.version ? `v${update.version}` : "the latest version";
+    updateStatus.textContent = `Downloading ${next}...`;
+    let downloaded = 0;
+    let contentLength = 0;
+    await update.downloadAndInstall((event) => {
+      if (event.event === "Started") {
+        contentLength = event.data.contentLength ?? 0;
+      } else if (event.event === "Progress") {
+        downloaded += event.data.chunkLength;
+        if (contentLength > 0) {
+          const pct = Math.min(100, Math.round((downloaded / contentLength) * 100));
+          updateStatus.textContent = `Downloading ${next}... ${pct}%`;
+        }
+      } else if (event.event === "Finished") {
+        updateStatus.textContent = "Installing update...";
+      }
+    });
+
+    updateStatus.textContent = "Update installed. Relaunching...";
+    await relaunch();
+  } catch (e) {
+    console.error("update check failed:", e);
+    updateStatus.textContent = `Update failed: ${String(e)}`;
+  } finally {
+    checkUpdatesBtn.disabled = false;
+  }
+}
+
+checkUpdatesBtn.addEventListener("click", () => {
+  checkForUpdates();
+});
 
 const insWpm = document.getElementById("ins-wpm");
 const insTotalWords = document.getElementById("ins-total-words");

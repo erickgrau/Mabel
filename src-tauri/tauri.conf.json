@@ -31,6 +31,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "publisher": "Chibitek Labs",
     "copyright": "Copyright (c) 2026 Chibitek Labs. All rights reserved.",
     "category": "Productivity",
@@ -57,6 +58,14 @@
         "dylibs/libggml-cpu.0.dylib",
         "dylibs/libggml-blas.0.dylib",
         "dylibs/libggml-metal.0.dylib"
+      ]
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYyN0U2MTAzQzA4MDNCNkIKUldSck80REFBMkYrWXZYYzhLVFN6SDA2QXlpN0RnM0lPZzhwOVlzdUxVcWkweUJlWlQxaDRRNzQK",
+      "endpoints": [
+        "https://github.com/erickgrau/Mabel/releases/latest/download/latest.json"
       ]
     }
   }
