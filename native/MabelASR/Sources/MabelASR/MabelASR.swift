@@ -363,11 +363,18 @@ public func mabel_asr_whisperkit_transcribe(
         let text = try runBlocking {
             let kit = try await whisperKitWarm.load(folder: folder)
             let detect = language != "en"
-            let options = DecodingOptions(
+            // Soft-reset decode context on every take. The kit stays warm
+            // (do not reconstruct WhisperKit / cleanup CoreML). Prefill
+            // cache + leftover promptTokens are the long-session leak that
+            // injects invented salad after ~15 minutes of toggle use.
+            var options = DecodingOptions(
                 task: .transcribe,
                 language: detect ? nil : "en",
                 detectLanguage: detect
             )
+            options.usePrefillCache = false
+            options.promptTokens = nil
+            options.prefixTokens = nil
             // Annotate [TranscriptionResult] so Swift 6 does not bind the
             // deprecated optional-single-result overload. `.text` is String.
             let results: [TranscriptionResult] = try await kit.transcribe(

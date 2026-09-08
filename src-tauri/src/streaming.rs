@@ -178,6 +178,10 @@ async fn transcribe_and_paste(
 
     match raw {
         Ok(text) => {
+            let Some(text) = crate::transcript_integrity::accept_asr_or_fail_closed(&text) else {
+                println!("[Mabel] dropped degraded streaming chunk (fail closed)");
+                return;
+            };
             let rule_cleaned = cleanup_text(&text);
             if rule_cleaned.is_empty() {
                 return;

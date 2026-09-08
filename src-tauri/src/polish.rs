@@ -4,13 +4,17 @@
 //! - local Gemma fail closed (loopback llama-server; Err → rules, never
 //!   paste contaminated model text)
 //! - never invent
+//! - fail closed / reset rather than invent words on long Mac sessions
 //! - not Nexus write
 //! - distinct from clipboard toggles (`clipboardHistoryEnabled` ≠ Polish)
 //!
-//! BREAKS IF: default ON / cloud / invent / Nexus write
+//! BREAKS IF: default ON / cloud / invent / garbage inject / Nexus write
 //!
 //! Product LOCK still applies: Pro only, modes Off|Casual|Professional|Polite,
 //! after ASR, autocorrect + light reword, cat UI, no website upgrade.
+//!
+//! Product LOCK UPDATE + Enforcer BOUND UPDATE confirm (Erick 2026-09-08):
+//! Mac TF only this tip; fail closed/reset rather than invent. Soft nits later.
 
 use std::path::PathBuf;
 
@@ -18,7 +22,7 @@ use crate::storekit;
 
 /// Named Enforcer BOUND. `enforcer_bound_*` tests fail if this is violated.
 pub const ENFORCER_BOUND: &str =
-    "default OFF; local Gemma fail closed; never invent; not Nexus write; clipboardHistoryEnabled != Polish";
+    "default OFF; local Gemma fail closed; never invent; fail closed/reset rather than invent words; Mac TF only this tip; Soft nits later; not Nexus write; clipboardHistoryEnabled != Polish";
 
 pub const MODE_OFF: &str = "off";
 pub const MODE_CASUAL: &str = "casual";
@@ -134,6 +138,15 @@ pub fn accept_or_fail_closed(input: &str, output: &str) -> Result<String, String
             "Polish output too long ({} chars vs {} input chars), fail closed (never invent)",
             out_chars as usize, input_chars as usize
         ));
+    }
+    // Same-length invention (degraded ASR salad, Gemma drift) is not caught
+    // by the 2.5x gate. Token overlap fails closed so we keep the rules text.
+    if let Some(overlap) = crate::transcript_integrity::token_overlap_ratio(input, cleaned) {
+        if overlap < 0.40 {
+            return Err(format!(
+                "Polish output dropped spoken tokens (overlap={overlap:.2}), fail closed (never invent)"
+            ));
+        }
     }
     Ok(cleaned.to_string())
 }
@@ -283,12 +296,22 @@ mod tests {
             "BREAKS IF: invent (expanded output accepted)"
         );
         assert!(accept_or_fail_closed("hello", "   ").is_err());
+        let spoken = "Please send the metrics to May after the meeting today.";
+        let salad = "The magic seem very low Or. The metrics are give me Uh Uh the save but are all the damn time And things like that And you from All magic that we can probably Holy Send May Burns and Burnity.";
+        assert!(
+            accept_or_fail_closed(spoken, salad).is_err(),
+            "BREAKS IF: invent/garbage inject on long session"
+        );
+        assert_eq!(accept_or_fail_closed(spoken, spoken).unwrap(), spoken);
     }
 
     #[test]
     fn enforcer_bound_breaks_if_default_on_cloud_invent_or_nexus_write() {
         assert!(ENFORCER_BOUND.contains("default OFF"));
         assert!(ENFORCER_BOUND.contains("never invent"));
+        assert!(ENFORCER_BOUND.contains("fail closed/reset rather than invent words"));
+        assert!(ENFORCER_BOUND.contains("Mac TF only this tip"));
+        assert!(ENFORCER_BOUND.contains("Soft nits later"));
         assert!(ENFORCER_BOUND.contains("not Nexus write"));
         assert!(ENFORCER_BOUND.contains("clipboardHistoryEnabled != Polish"));
 
@@ -324,13 +347,21 @@ mod tests {
             "BREAKS IF: cloud"
         );
 
-        // BREAKS IF: invent
+        // BREAKS IF: invent / garbage inject on long session
         for mode in [MODE_CASUAL, MODE_PROFESSIONAL, MODE_POLITE] {
             let prompt = system_prompt(mode);
             assert!(prompt.contains("Never invent facts"), "BREAKS IF: invent");
             assert!(prompt.contains("Never expand meaning"), "BREAKS IF: invent");
         }
         assert!(llm.contains("accept_or_fail_closed"), "BREAKS IF: invent");
+        assert!(
+            include_str!("recorder.rs").contains("transcribe_isolated_take"),
+            "BREAKS IF: invent/garbage inject on long session"
+        );
+        assert!(
+            include_str!("transcribe_local.rs").contains("--no-context"),
+            "BREAKS IF: invent/garbage inject on long session"
+        );
 
         // BREAKS IF: Nexus write
         let main = include_str!("main.rs");

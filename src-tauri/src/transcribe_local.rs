@@ -154,6 +154,10 @@ pub async fn transcribe_local_detailed(
         "--no-speech-thold".to_string(),
         "0.6".to_string(),
         "--suppress-nst".to_string(),
+        // Isolate each window. Without this, whisper.cpp feeds the previous
+        // segment text back in as the next prompt and long toggle takes
+        // (~15 min) cascade into invented salad.
+        "--no-context".to_string(),
         "--prompt".to_string(),
         prompt,
     ];
@@ -280,6 +284,12 @@ fn parse_whisper_json(raw: &str) -> Result<LocalTranscription, String> {
         } else {
             Some(probabilities.iter().sum::<f64>() / probabilities.len() as f64)
         };
+        if crate::transcript_integrity::is_low_confidence(confidence) {
+            continue;
+        }
+        if crate::transcript_integrity::accept_asr_or_fail_closed(&text).is_none() {
+            continue;
+        }
         if !probabilities.is_empty() {
             confidence_sum += probabilities.iter().sum::<f64>();
             confidence_count += probabilities.len() as u64;
@@ -501,6 +511,42 @@ mod tests {
         assert!(transcript_srt(&transcript).contains("00:00:01,250 --> 00:00:02,500"));
         assert!(transcript_vtt(&transcript).starts_with("WEBVTT\n\n"));
         assert!(transcript_json(&transcript).unwrap().contains("\"startMs\""));
+    }
+
+    #[test]
+    fn whisper_cpp_isolates_decoder_context() {
+        let src = include_str!("transcribe_local.rs");
+        assert!(
+            src.contains("\"--no-context\""),
+            "long takes must not condition the next window on previous text"
+        );
+    }
+
+    #[test]
+    fn low_confidence_and_silence_hallucination_segments_fail_closed() {
+        let raw = serde_json::json!({
+            "result": { "language": "en" },
+            "transcription": [
+                {
+                    "offsets": { "from": 0, "to": 1000 },
+                    "text": "Save the metrics.",
+                    "tokens": [{ "p": 0.9 }]
+                },
+                {
+                    "offsets": { "from": 1000, "to": 2000 },
+                    "text": "Holy Send May Burns and Burnity",
+                    "tokens": [{ "p": 0.12 }, { "p": 0.08 }]
+                },
+                {
+                    "offsets": { "from": 2000, "to": 2500 },
+                    "text": "Thanks for watching.",
+                    "tokens": [{ "p": 0.88 }]
+                }
+            ]
+        });
+        let transcript = parse_whisper_json(&raw.to_string()).unwrap();
+        assert_eq!(transcript.text, "Save the metrics.");
+        assert_eq!(transcript.segments.len(), 1);
     }
 
     #[test]

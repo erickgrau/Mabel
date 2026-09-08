@@ -297,31 +297,8 @@ impl Recorder {
                 &format!("transcription engine={}", settings.engine),
             );
             println!("[Mabel] Transcription engine: {}", settings.engine);
-            let raw_text = match settings.engine.as_str() {
-                "local" => {
-                    crate::debug_log::append(
-                        app_dir,
-                        &format!("local transcription start engine={}", settings.local_engine),
-                    );
-                    println!(
-                        "[Mabel] Local transcription starting ({})",
-                        settings.local_engine
-                    );
-                    transcribe_native::transcribe_local_engine(app, app_dir, &temp_path, &settings)
-                        .await?
-                }
-                "cloud" => {
-                    crate::debug_log::append(app_dir, "cloud transcription start");
-                    println!("[Mabel] Cloud transcription starting");
-                    let key = crate::secrets::get_groq_key().map_err(|e| {
-                        crate::debug_log::append(app_dir, &format!("cloud key read failed: {e}"));
-                        e
-                    })?;
-                    transcribe_groq::transcribe_groq(&key, &temp_path, &settings.whisper_language)
-                        .await?
-                }
-                _ => return Err(format!("Unknown engine: {}", settings.engine)),
-            };
+            let raw_text =
+                transcribe_isolated_take(app, settings, app_dir, &temp_path).await?;
             println!(
                 "[Mabel] Transcription returned (chars={})",
                 raw_text.chars().count()
@@ -530,7 +507,7 @@ mod tests {
             .nth(1)
             .expect("stop_and_transcribe");
         assert!(
-            stop.contains("cloud key read failed"),
+            src.contains("cloud key read failed") && stop.contains("transcribe_isolated_take"),
             "cloud keychain fail must be logged, not swallowed as empty ASR"
         );
         assert!(
@@ -590,9 +567,94 @@ mod tests {
             "stop must not teardown the in-process ASR session"
         );
         assert!(
+            stop.contains("transcribe_isolated_take"),
+            "long Mac takes must isolate ASR context on stop"
+        );
+        assert!(
+            src.contains("accept_asr_or_fail_closed"),
+            "degraded ASR must fail closed rather than inject garbage"
+        );
+        assert!(
             stop.contains("to_paste.is_empty()"),
             "empty ASR text is the Nothing recognized path, not a silent Ready"
         );
+    }
+}
+
+/// Isolate long toggle takes into ≤20s windows so Whisper/cloud cannot
+/// condition later speech on earlier invented text. Soft reset only —
+/// does not unload the warm CoreML session.
+async fn transcribe_isolated_take(
+    app: &AppHandle,
+    settings: &Settings,
+    app_dir: &PathBuf,
+    audio_path: &PathBuf,
+) -> Result<String, String> {
+    let chunks = crate::transcript_integrity::plan_chunks(audio_path)?;
+    crate::debug_log::append(
+        app_dir,
+        &format!(
+            "isolated ASR chunks={} window_secs={}",
+            chunks.len(),
+            crate::transcript_integrity::ISOLATED_CHUNK_SECS
+        ),
+    );
+    let mut accepted = Vec::new();
+    let mut dropped = 0_u32;
+    for chunk in &chunks {
+        if settings.engine == "local"
+            && crate::audio::native_engine_needs_min_duration(&settings.local_engine)
+            && chunk != audio_path
+        {
+            let _ = crate::audio::pad_pcm16_mono_wav(chunk, crate::audio::NATIVE_ASR_MIN_SAMPLES);
+        }
+        let raw = transcribe_one_chunk(app, settings, app_dir, chunk).await?;
+        match crate::transcript_integrity::accept_asr_or_fail_closed(&raw) {
+            Some(text) => accepted.push(text),
+            None => {
+                dropped += 1;
+                crate::debug_log::append(app_dir, "dropped degraded ASR chunk (fail closed)");
+            }
+        }
+    }
+    crate::transcript_integrity::finish_chunks(audio_path, &chunks);
+    if dropped > 0 {
+        crate::debug_log::append(
+            app_dir,
+            &format!("isolated ASR dropped {dropped} garbage chunk(s)"),
+        );
+    }
+    Ok(accepted.join(" "))
+}
+
+async fn transcribe_one_chunk(
+    app: &AppHandle,
+    settings: &Settings,
+    app_dir: &PathBuf,
+    audio_path: &PathBuf,
+) -> Result<String, String> {
+    match settings.engine.as_str() {
+        "local" => {
+            crate::debug_log::append(
+                app_dir,
+                &format!("local transcription start engine={}", settings.local_engine),
+            );
+            println!(
+                "[Mabel] Local transcription starting ({})",
+                settings.local_engine
+            );
+            transcribe_native::transcribe_local_engine(app, app_dir, audio_path, settings).await
+        }
+        "cloud" => {
+            crate::debug_log::append(app_dir, "cloud transcription start");
+            println!("[Mabel] Cloud transcription starting");
+            let key = crate::secrets::get_groq_key().map_err(|e| {
+                crate::debug_log::append(app_dir, &format!("cloud key read failed: {e}"));
+                e
+            })?;
+            transcribe_groq::transcribe_groq(&key, audio_path, &settings.whisper_language).await
+        }
+        other => Err(format!("Unknown engine: {other}")),
     }
 }
 

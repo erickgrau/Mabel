@@ -377,5 +377,13 @@ mod tests {
             !transcribe_fn.contains("downloadAndLoad"),
             "downloadAndLoad on every take rebinds the process-wide CoreML cache"
         );
+        assert!(
+            swift.contains("usePrefillCache = false"),
+            "WhisperKit must soft-reset decoder cache so long takes do not invent"
+        );
+        assert!(
+            swift.contains("promptTokens = nil") && swift.contains("prefixTokens = nil"),
+            "WhisperKit must not condition a take on leftover previous text"
+        );
     }
 }
